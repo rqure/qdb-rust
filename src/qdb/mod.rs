@@ -5,6 +5,12 @@ pub enum Error {
     ClientError(String),
 }
 
+impl Error {
+    pub fn from_client(msg: &str) -> Box<Self> {
+        Box::new(Error::ClientError(msg.to_string()))
+    }
+}
+
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -64,7 +70,7 @@ pub enum DatabaseValue {
 }
 
 impl DatabaseValue {
-    fn get<T>(&self) -> &T {
+    pub fn get<T>(&self) -> &T {
         match self {
             DatabaseValue::String(s) => s,
             DatabaseValue::Integer(i) => i,
@@ -77,7 +83,7 @@ impl DatabaseValue {
         }
     }
 
-    fn set<T>(&mut self, value: T) {
+    pub fn set<T>(&mut self, value: T) {
         match self {
             DatabaseValue::String(s) => *s = value,
             DatabaseValue::Integer(i) => *i = value,
@@ -92,13 +98,13 @@ impl DatabaseValue {
 }
 
 pub trait ClientTrait {
-    fn get_entity(&self, entity_id: &str) -> Result<DatabaseEntity>;
-    fn get_entities(&self, entity_type: &str) -> Result<Vec<DatabaseEntity>>;
-    fn read(&self, requests: &mut Vec<DatabaseField>) -> Result<()>;
-    fn write(&self, requests: &mut Vec<DatabaseField>) -> Result<()>;
-    fn register_notification(&self, config: NotificationConfig) -> Result<NotificationToken>;
-    fn unregister_notification(&self, token: NotificationToken) -> Result<()>;
-    fn process_notifications(&self) -> Result<Vec<DatabaseNotification>>;
+    fn get_entity(&mut self, entity_id: &str) -> Result<DatabaseEntity>;
+    fn get_entities(&mut self, entity_type: &str) -> Result<Vec<DatabaseEntity>>;
+    fn read(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()>;
+    fn write(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()>;
+    // fn register_notification(&self, config: NotificationConfig) -> Result<NotificationToken>;
+    // fn unregister_notification(&self, token: NotificationToken) -> Result<()>;
+    // fn process_notifications(&self) -> Result<Vec<DatabaseNotification>>;
 }
 
 pub mod rest;
