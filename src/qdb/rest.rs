@@ -1,49 +1,7 @@
-use std::result;
-
 use super::Error;
 use super::Result;
 use super::DatabaseEntity;
 use super::DatabaseField;
-use super::ValueTrait;
-
-pub enum Value {
-    String(String),
-    Integer(i64),
-    Float(f64),
-    Boolean(bool),
-    EntityReference(String),
-    Timestamp(String),
-    ConnectionState(String),
-    GarageDoorState(String),
-}
-
-impl ValueTrait for Value {
-    fn get<T>(&self) -> &T {
-        match self {
-            Value::String(s) => s,
-            Value::Integer(i) => i,
-            Value::Float(f) => f,
-            Value::Boolean(b) => b,
-            Value::EntityReference(e) => e,
-            Value::Timestamp(t) => t,
-            Value::ConnectionState(c) => c,
-            Value::GarageDoorState(g) => g,
-        }
-    }
-
-    fn set<T>(&mut self, value: T) {
-        match self {
-            Value::String(s) => *s = value,
-            Value::Integer(i) => *i = value,
-            Value::Float(f) => *f = value,
-            Value::Boolean(b) => *b = value,
-            Value::EntityReference(e) => *e = value,
-            Value::Timestamp(t) => *t = value,
-            Value::ConnectionState(c) => *c = value,
-            Value::GarageDoorState(g) => *g = value,
-        }
-    }
-}
 
 pub struct Client {
     url: String,
@@ -51,9 +9,9 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new<T>(url: &T) -> Client {
+    pub fn new(url: &str) -> Client {
         Client {
-            url: String::from(url),
+            url: url.to_string(),
             request_template: ureq::serde_json::Map::new()
         }
     }
@@ -70,7 +28,7 @@ impl Client {
                 self.request_template = client_id;
                 Ok(())
             },
-            _ => Err(Box::new(Error::ClientError(String::from("Invalid response from server"))))
+            _ => Err(Box::new(Error::ClientError("Invalid response from server".to_string())))
         }
     }
 
@@ -102,7 +60,7 @@ impl Client {
             }
         }
 
-        Err(Error::ClientError(String::from("Failed to authenticate")))
+        Err(Error::ClientError("Failed to authenticate".to_string()))
     }
 }
 
@@ -110,9 +68,9 @@ impl ClientTrait for Client {
     fn get_entity(&self, entity_id: &str) -> Result<DatabaseEntity> {
         let request = self.request_template.clone();
         let payload = ureq::serde_json::Map::new();
-        payload["@type"] = "type.googleapis.com/qdb.WebRuntimeGetEntityRequest";
-        payload["entityId"] = entity_id;
-        request["payload"] = payload;
+        payload.insert("@type".to_string(), "type.googleapis.com/qdb.WebRuntimeGetEntityRequest");
+        payload.insert("entityId".to_string(), entity_id);
+        request.insert("payload".to_string(), payload);
 
         let entity = self.send(request)?
             .as_object()
@@ -121,22 +79,10 @@ impl ClientTrait for Client {
             .and_then(|o| o.get("entity"))
             .and_then(|v| v.as_object())?;
 
-        if !entity.contains_key("id") {
-            return Err(Box::new(Error::ClientError(String::from("Invalid response from server: no id key"))))
-        }
-
-        if !entity.contains_key("type") {
-            return Err(Box::new(Error::ClientError(String::from("Invalid response from server: no type key"))))
-        }
-
-        if !entity.contains_key("name") {
-            return Err(Box::new(Error::ClientError(String::from("Invalid response from server: no name key"))))
-        }
-
         Ok(DatabaseEntity{
-            entity_id: entity["id"],
-            entity_type: entity["type"],
-            entity_name: entity["name"]
+            entity_id: entity.get("id")?.as_str()?.to_string(),
+            entity_type: entity.get("type")?.as_str()?.to_string(),
+            entity_name: entity.get("name")?.as_str()?.to_string()
         })
     }
 
@@ -158,25 +104,13 @@ impl ClientTrait for Client {
         for entity in entities {
             match entity {
                 ureq::serde_json::Value::Object(entity) => {
-                    if !entity.contains_key("id") {
-                        return Err(Box::new(Error::ClientError(String::from("Invalid response from server: no id key"))))
-                    }
-
-                    if !entity.contains_key("type") {
-                        return Err(Box::new(Error::ClientError(String::from("Invalid response from server: no type key"))))
-                    }
-
-                    if !entity.contains_key("name") {
-                        return Err(Box::new(Error::ClientError(String::from("Invalid response from server: no name key"))))
-                    }
-
                     result.push(DatabaseEntity{
-                        entity_id: entity["id"],
-                        entity_type: entity["type"],
-                        entity_name: entity["name"]
+                        entity_id: entity["id"].as_str()?.to_string(),
+                        entity_type: entity["type"].as_str()?.to_string(),
+                        entity_name: entity["name"].as_str()?.to_string()
                     })
                 },
-                _ => return Err(Box::new(Error::ClientError(String::from("Invalid response from server: entity is not an object"))))
+                _ => return Err(Box::new(Error::ClientError("Invalid response from server: entity is not an object".to_string())))
             }
         }
 
@@ -186,19 +120,46 @@ impl ClientTrait for Client {
     fn read(&self, requests: &mut Vec<DatabaseField>) -> Result<()> {
         let request = self.request_template.clone();
         let payload = ureq::serde_json::Map::new();
-        payload["@type"] = "type.googleapis.com/qdb.WebRuntimeDatabaseRequest";
-        payload["requestType"] = "READ";
+        payload.insert("@type".to_string(), "type.googleapis.com/qdb.WebRuntimeDatabaseRequest");
+        payload.insert("requestType".to_string(), "READ");
 
-        let requests = ureq::serde_json::Value::Array(requests.iter().map(|r| {
-            let request = ureq::serde_json::Map::new();
-            request["id"] = r.entity_id;
-            request["field"] = r.field;
-            request
-        }).collect());
-
+        {
+            let requests = ureq::serde_json::Value::Array(requests.iter().map(|r| {
+                let request = ureq::serde_json::Map::new();
+                request.insert("id".to_string(), r.entity_id);
+                request.insert("field".to_string(), r.field);
+                request
+            }).collect());
+            payload.insert("requests".to_string(), requests);
+        }
         request["payload"] = payload;
 
-        self.send(request)?;
+        let responses = self.send(request)?
+            .as_object()
+            .and_then(|o| o.get("payload"))
+            .and_then(|v| v.as_object())
+            .and_then(|o| o.get("response"))
+            .and_then(|v| v.as_array())?;
+
+        for response in responses {
+            match response {
+                ureq::serde_json::Value::Object(response) => {
+                    let entity_id = response["id"].as_str()?;
+                    let field = response["field"].as_str()?;
+                    let value = response["value"].as_object()?;
+                    let write_time = response["writeTime"];
+                    let writer_id = response["writerId"];
+
+                    let field = requests.iter_mut().find(|r| r.entity_id == entity_id && r.field == field)?;
+                    field.value = value.get(key);
+                    field.write_time = write_time;
+                    field.writer_id = writer_id;
+
+                }
+                _ => return Err(Box::new(Error::ClientError("Invalid response from server: response is not an object".to_string())))
+            }
+        }
+
         Ok(())
     }
 
