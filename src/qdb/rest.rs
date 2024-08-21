@@ -89,17 +89,17 @@ impl ClientTrait for Client {
             entity_id: entity
                 .get("id")
                 .and_then(|v| v.as_str())
-                .ok_or(Error::from_client("Invalid response from server: Entity id is not valid"))?
+                .ok_or(Error::from_client("Invalid response from server: entity id is not valid"))?
                 .to_string(),
             entity_type: entity
                 .get("type")
                 .and_then(|v| v.as_str())
-                .ok_or(Error::from_client("Invalid response from server: Entity type is not valid"))?
+                .ok_or(Error::from_client("Invalid response from server: entity type is not valid"))?
                 .to_string(),
             entity_name: entity
                 .get("name")
                 .and_then(|v| v.as_str())
-                .ok_or(Error::from_client("Invalid response from server: Entity name is not valid"))?
+                .ok_or(Error::from_client("Invalid response from server: entity name is not valid"))?
                 .to_string()
         })
     }
@@ -128,17 +128,17 @@ impl ClientTrait for Client {
                         entity_id: entity
                             .get("id")
                             .and_then(|v| v.as_str())
-                            .ok_or(Error::from_client("Invalid response from server: Entity id is not valid"))?
+                            .ok_or(Error::from_client("Invalid response from server: entity id is not valid"))?
                             .to_string(),
                         entity_type: entity
                             .get("type")
                             .and_then(|v| v.as_str())
-                            .ok_or(Error::from_client("Invalid response from server: Entity type is not valid"))?
+                            .ok_or(Error::from_client("Invalid response from server: entity type is not valid"))?
                             .to_string(),
                         entity_name: entity
                             .get("name")
                             .and_then(|v| v.as_str())
-                            .ok_or(Error::from_client("Invalid response from server: Entity name is not valid"))?
+                            .ok_or(Error::from_client("Invalid response from server: entity name is not valid"))?
                             .to_string()
                     })
                 },
@@ -181,13 +181,13 @@ impl ClientTrait for Client {
                     let entity_id = entity
                         .get("id")
                         .and_then(|v| v.as_str())
-                        .ok_or(Error::from_client("Invalid response from server: Entity id is not valid"))?
+                        .ok_or(Error::from_client("Invalid response from server: entity id is not valid"))?
                         .to_string();
 
                     let field_name = entity
                         .get("field")
                         .and_then(|v| v.as_str())
-                        .ok_or(Error::from_client("Invalid response from server: Entity id is not valid"))?
+                        .ok_or(Error::from_client("Invalid response from server: field name is not valid"))?
                         .to_string();
 
                     let field = requests

@@ -3,11 +3,16 @@ pub type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
 #[derive(Debug)]
 pub enum Error {
     ClientError(String),
+    DatabaseFieldError(String),
 }
 
 impl Error {
     pub fn from_client(msg: &str) -> Box<Self> {
         Box::new(Error::ClientError(msg.to_string()))
+    }
+
+    pub fn from_database_field(msg: &str) -> Box<Self> {
+        Box::new(Error::DatabaseFieldError(msg.to_string()))
     }
 }
 
@@ -15,6 +20,7 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::ClientError(msg) => write!(f, "Client error: {}", msg),
+            Error::DatabaseFieldError(msg) => write!(f, "Database error: {}", msg),
         }
     }
 }
@@ -23,6 +29,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::ClientError(_) => None,
+            Error::DatabaseFieldError(_) => None,
         }
     }
 }
@@ -70,29 +77,139 @@ pub enum DatabaseValue {
 }
 
 impl DatabaseValue {
-    pub fn get<T>(&self) -> &T {
+    pub fn as_str(&self) -> Result<&String> {
         match self {
-            DatabaseValue::String(s) => s,
-            DatabaseValue::Integer(i) => i,
-            DatabaseValue::Float(f) => f,
-            DatabaseValue::Boolean(b) => b,
-            DatabaseValue::EntityReference(e) => e,
-            DatabaseValue::Timestamp(t) => t,
-            DatabaseValue::ConnectionState(c) => c,
-            DatabaseValue::GarageDoorState(g) => g,
+            DatabaseValue::String(s) => Ok(s),
+            _ => Err(Error::from_database_field("Value is not a string")),
         }
     }
 
-    pub fn set<T>(&mut self, value: T) {
+    pub fn as_i64(&self) -> Result<&i64> {
         match self {
-            DatabaseValue::String(s) => *s = value,
-            DatabaseValue::Integer(i) => *i = value,
-            DatabaseValue::Float(f) => *f = value,
-            DatabaseValue::Boolean(b) => *b = value,
-            DatabaseValue::EntityReference(e) => *e = value,
-            DatabaseValue::Timestamp(t) => *t = value,
-            DatabaseValue::ConnectionState(c) => *c = value,
-            DatabaseValue::GarageDoorState(g) => *g = value,
+            DatabaseValue::Integer(i) => Ok(i),
+            _ => Err(Error::from_database_field("Value is not an integer")),
+        }
+    }
+
+    pub fn as_f64(&self) -> Result<&f64> {
+        match self {
+            DatabaseValue::Float(f) => Ok(f),
+            _ => Err(Error::from_database_field("Value is not a float")),
+        }
+    }
+
+    pub fn as_bool(&self) -> Result<&bool> {
+        match self {
+            DatabaseValue::Boolean(b) => Ok(b),
+            _ => Err(Error::from_database_field("Value is not a boolean")),
+        }
+    }
+
+    pub fn as_entity_reference(&self) -> Result<&String> {
+        match self {
+            DatabaseValue::EntityReference(e) => Ok(e),
+            _ => Err(Error::from_database_field("Value is not an entity reference")),
+        }
+    }
+
+    pub fn as_timestamp(&self) -> Result<&String> {
+        match self {
+            DatabaseValue::Timestamp(t) => Ok(t),
+            _ => Err(Error::from_database_field("Value is not a timestamp")),
+        }
+    }
+
+    pub fn as_connection_state(&self) -> Result<&String> {
+        match self {
+            DatabaseValue::ConnectionState(c) => Ok(c),
+            _ => Err(Error::from_database_field("Value is not a connection state")),
+        }
+    }
+
+    pub fn as_garage_door_state(&self) -> Result<&String> {
+        match self {
+            DatabaseValue::GarageDoorState(g) => Ok(g),
+            _ => Err(Error::from_database_field("Value is not a garage door state")),
+        }
+    }
+
+    pub fn update_str(&mut self, value: String) -> Result<()> {
+        match self {
+            DatabaseValue::String(s) => {
+                *s = value;
+                Ok(())
+            },
+            _ => Err(Error::from_database_field("Value is not a string")),
+        }
+    }
+
+    pub fn update_i64(&mut self, value: i64) -> Result<()> {
+        match self {
+            DatabaseValue::Integer(i) => {
+                *i = value;
+                Ok(())
+            },
+            _ => Err(Error::from_database_field("Value is not an integer")),
+        }
+    }
+
+    pub fn update_f64(&mut self, value: f64) -> Result<()> {
+        match self {
+            DatabaseValue::Float(f) => {
+                *f = value;
+                Ok(())
+            },
+            _ => Err(Error::from_database_field("Value is not a float")),
+        }
+    }
+
+    pub fn update_bool(&mut self, value: bool) -> Result<()> {
+        match self {
+            DatabaseValue::Boolean(b) => {
+                *b = value;
+                Ok(())
+            },
+            _ => Err(Error::from_database_field("Value is not a boolean")),
+        }
+    }
+
+    pub fn update_entity_reference(&mut self, value: String) -> Result<()> {
+        match self {
+            DatabaseValue::EntityReference(e) => {
+                *e = value;
+                Ok(())
+            },
+            _ => Err(Error::from_database_field("Value is not an entity reference")),
+        }
+    }
+
+    pub fn update_timestamp(&mut self, value: String) -> Result<()> {
+        match self {
+            DatabaseValue::Timestamp(t) => {
+                *t = value;
+                Ok(())
+            },
+            _ => Err(Error::from_database_field("Value is not a timestamp")),
+        }
+    }
+
+    pub fn update_connection_state(&mut self, value: String) -> Result<()> {
+        match self {
+            DatabaseValue::ConnectionState(c) => {
+                *c = value;
+                Ok(())
+            },
+            _ => Err(Error::from_database_field("Value is not a connection state")),
+        }
+    }
+
+    pub fn update_garage_door_state(&mut self, value: String) -> Result<()> {
+        match self {
+            DatabaseValue::GarageDoorState(g) => {
+                *g = value;
+                Ok(())
+            },
+            _ => Err(Error::from_database_field("Value is not a garage door state")),
         }
     }
 }
