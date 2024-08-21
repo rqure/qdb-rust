@@ -132,7 +132,7 @@ impl ClientTrait for Client {
             }).collect());
             payload.insert("requests".to_string(), requests);
         }
-        request["payload"] = payload;
+        request.insert("payload".to_string(), payload);
 
         let responses = self.send(request)?
             .as_object()
