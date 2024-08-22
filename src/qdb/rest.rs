@@ -2,6 +2,7 @@ use super::Error;
 use super::Result;
 use super::DatabaseEntity;
 use super::DatabaseField;
+use super::DatabaseValue;
 use super::ClientTrait;
 
 use ureq::serde_json::Value;
@@ -157,9 +158,9 @@ impl ClientTrait for Client {
 
         {
             let requests = Value::Array(requests.iter().map(|r| {
-                let request = Map::new();
-                request.insert("id".to_string(), Value::String(r.entity_id));
-                request.insert("field".to_string(), Value::String(r.field));
+                let mut request = Map::new();
+                request.insert("id".to_string(), Value::String(r.entity_id.clone()));
+                request.insert("field".to_string(), Value::String(r.field.clone()));
                 Value::Object(request)
             }).collect());
             payload.insert("requests".to_string(), requests);
@@ -197,9 +198,8 @@ impl ClientTrait for Client {
 
                     let value = entity
                         .get("value")
-                        .and_then(|v: &Value| v.as_str())
-                        .ok_or(Error::from_client("Invalid response from server: value is not valid"))?
-                        .to_string();
+                        .and_then(|v: &Value| v.as_object())
+                        .ok_or(Error::from_client("Invalid response from server: value is not valid"))?;
 
                     let write_time = entity
                         .get("writeTime")
@@ -213,7 +213,75 @@ impl ClientTrait for Client {
                         .ok_or(Error::from_client("Invalid response from server: writer id is not valid"))?
                         .to_string();
 
-                    field.value = value;
+                    let value_type = value
+                        .get("@type")
+                        .and_then(|v| v.as_str())
+                        .ok_or(Error::from_client("Invalid response from server: value type is not valid"))?;
+
+                    field.value = match value_type {
+                        "type.googleapis.com/qdb.String" => {
+                            let value = value
+                                .get("raw")
+                                .and_then(|v| v.as_str())
+                                .ok_or(Error::from_client("Invalid response from server: value is not valid"))?
+                                .to_string();
+                            DatabaseValue::String(value)
+                        },
+                        "type.googleapis.com/qdb.Int" => {
+                            let value = value
+                                .get("raw")
+                                .and_then(|v| v.as_i64())
+                                .ok_or(Error::from_client("Invalid response from server: value is not valid"))?;
+                            DatabaseValue::Integer(value)
+                        },
+                        "type.googleapis.com/qdb.Float" => {
+                            let value = value
+                                .get("raw")
+                                .and_then(|v| v.as_f64())
+                                .ok_or(Error::from_client("Invalid response from server: value is not valid"))?;
+                            DatabaseValue::Float(value)
+                        },
+                        "type.googleapis.com/qdb.Bool" => {
+                            let value = value
+                                .get("raw")
+                                .and_then(|v| v.as_bool())
+                                .ok_or(Error::from_client("Invalid response from server: value is not valid"))?;
+                            DatabaseValue::Boolean(value)
+                        },
+                        "type.googleapis.com/qdb.EntityReference" => {
+                            let value = value
+                                .get("raw")
+                                .and_then(|v| v.as_str())
+                                .ok_or(Error::from_client("Invalid response from server: value is not valid"))?
+                                .to_string();
+                            DatabaseValue::EntityReference(value)
+                        },
+                        "type.googleapis.com/qdb.Timestamp" => {
+                            let value = value
+                                .get("raw")
+                                .and_then(|v| v.as_str())
+                                .ok_or(Error::from_client("Invalid response from server: value is not valid"))?
+                                .to_string();
+                            DatabaseValue::Timestamp(value)
+                        },
+                        "type.googleapis.com/qdb.ConnectionState" => {
+                            let value = value
+                                .get("raw")
+                                .and_then(|v| v.as_str())
+                                .ok_or(Error::from_client("Invalid response from server: value is not valid"))?
+                                .to_string();
+                            DatabaseValue::ConnectionState(value)
+                        },
+                        "type.googleapis.com/qdb.GarageDoorState" => {
+                            let value = value
+                                .get("raw")
+                                .and_then(|v| v.as_str())
+                                .ok_or(Error::from_client("Invalid response from server: value is not valid"))?
+                                .to_string();
+                            DatabaseValue::GarageDoorState(value)
+                        },
+                        _ => return Err(Error::from_client("Invalid response from server: value type is not valid"))
+                    };
                     field.write_time = write_time;
                     field.writer_id = writer_id;
                 }
@@ -225,26 +293,7 @@ impl ClientTrait for Client {
     }
 
     fn write(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()> {
-        let request = self.request_template.clone();
-        let payload = Map::new();
-        payload.insert("@type".to_string(), "type.googleapis.com/qdb.WebRuntimeDatabaseRequest");
-        payload.insert("requestType".to_string(), "WRITE");
-
-        {
-            let requests = Value::Array(requests.iter().map(|r| {
-                let request = Map::new();
-                request.insert("id".to_string(), r.entity_id);
-                request.insert("field".to_string(), r.field);
-                request.insert("value".to_string(), r.value);
-                request
-            }).collect());
-            payload.insert("requests".to_string(), requests);
-        }
-        request.insert("payload".to_string(), payload);
-
-        self.send(request)?;
-
-        Ok(())
+        
     }
     
     // fn register_notification(&self, config: NotificationConfig) -> Result<NotificationToken> {
