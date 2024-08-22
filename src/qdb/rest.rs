@@ -197,9 +197,8 @@ impl ClientTrait for Client {
 
                     let value = entity
                         .get("value")
-                        .and_then(|v: &Value| v.as_str())
-                        .ok_or(Error::from_client("Invalid response from server: value is not valid"))?
-                        .to_string();
+                        .and_then(|v: &Value| v.as_object())
+                        .ok_or(Error::from_client("Invalid response from server: value is not valid"))?;
 
                     let write_time = entity
                         .get("writeTime")
@@ -211,6 +210,12 @@ impl ClientTrait for Client {
                         .get("writerId")
                         .and_then(|v| v.as_str())
                         .ok_or(Error::from_client("Invalid response from server: writer id is not valid"))?
+                        .to_string();
+
+                    let value_type = value
+                        .get("@type")
+                        .and_then(|v| v.as_str())
+                        .ok_or(Error::from_client("Invalid response from server: value type is not valid"))?
                         .to_string();
 
                     field.value = value;
