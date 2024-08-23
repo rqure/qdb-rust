@@ -9,7 +9,7 @@ use ureq::serde_json::Number;
 use ureq::serde_json::Value;
 use ureq::serde_json::Map;
 
-use chrono::{DateTime, Utc};
+use chrono::DateTime;
 
 pub struct Client {
     url: String,
