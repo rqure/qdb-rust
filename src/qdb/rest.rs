@@ -5,8 +5,11 @@ use super::DatabaseField;
 use super::DatabaseValue;
 use super::ClientTrait;
 
+use ureq::serde_json::Number;
 use ureq::serde_json::Value;
 use ureq::serde_json::Map;
+
+use chrono::{DateTime, Utc};
 
 pub struct Client {
     url: String,
@@ -259,10 +262,19 @@ impl ClientTrait for Client {
                         "type.googleapis.com/qdb.Timestamp" => {
                             let value = value
                                 .get("raw")
-                                .and_then(|v| v.as_str())
-                                .ok_or(Error::from_client("Invalid response from server: value is not valid"))?
-                                .to_string();
-                            DatabaseValue::Timestamp(value)
+                                .and_then(|v| v.as_object())
+                                .ok_or(Error::from_client("Invalid response from server: value is not valid"))?;
+                            let seconds = value
+                                .get("seconds")
+                                .and_then(|v| v.as_i64())
+                                .ok_or(Error::from_client("Invalid response from server: value is not valid"))?;
+                            let nanos = value
+                                .get("nanos")
+                                .and_then(|v| v.as_i64())
+                                .ok_or(Error::from_client("Invalid response from server: value is not valid"))?;
+                            let timestamp = DateTime::from_timestamp(seconds, nanos as u32)
+                                .ok_or(Error::from_client("Invalid response from server: value is not valid"))?;
+                            DatabaseValue::Timestamp(timestamp)
                         },
                         "type.googleapis.com/qdb.ConnectionState" => {
                             let value = value
@@ -293,7 +305,84 @@ impl ClientTrait for Client {
     }
 
     fn write(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()> {
-        
+        let mut request = self.request_template.clone();
+        let mut payload = Map::new();
+        payload.insert("@type".to_string(), Value::String("type.googleapis.com/qdb.WebRuntimeDatabaseRequest".to_string()));
+        payload.insert("requestType".to_string(), Value::String("WRITE".to_string()));
+
+        {
+            let requests = Value::Array(requests.iter().map(|r| {
+                let mut request = Map::new();
+                request.insert("id".to_string(), Value::String(r.entity_id.clone()));
+                request.insert("field".to_string(), Value::String(r.field.clone()));
+                let value = match &r.value {
+                    DatabaseValue::String(s) => {
+                        let mut value = Map::new();
+                        value.insert("@type".to_string(), Value::String("type.googleapis.com/qdb.String".to_string()));
+                        value.insert("raw".to_string(), Value::String(s.clone()));
+                        Value::Object(value)
+                    },
+                    DatabaseValue::Integer(i) => {
+                        let mut value = Map::new();
+                        value.insert("@type".to_string(), Value::String("type.googleapis.com/qdb.Int".to_string()));
+                        let n = Number::from(*i);
+                        value.insert("raw".to_string(), Value::Number(n));
+                        Value::Object(value)
+                    },
+                    DatabaseValue::Float(f) => {
+                        let mut value = Map::new();
+                        value.insert("@type".to_string(), Value::String("type.googleapis.com/qdb.Float".to_string()));
+                        let n = Number::from_f64(*f).unwrap_or(Number::from(0));
+                        value.insert("raw".to_string(), Value::Number(n));
+                        Value::Object(value)
+                    },
+                    DatabaseValue::Boolean(b) => {
+                        let mut value = Map::new();
+                        value.insert("@type".to_string(), Value::String("type.googleapis.com/qdb.Bool".to_string()));
+                        value.insert("raw".to_string(), Value::Bool(*b));
+                        Value::Object(value)
+                    },
+                    DatabaseValue::EntityReference(e) => {
+                        let mut value = Map::new();
+                        value.insert("@type".to_string(), Value::String("type.googleapis.com/qdb.EntityReference".to_string()));
+                        value.insert("raw".to_string(), Value::String(e.clone()));
+                        Value::Object(value)
+                    },
+                    DatabaseValue::Timestamp(t) => {
+                        let mut value = Map::new();
+                        value.insert("@type".to_string(), Value::String("type.googleapis.com/qdb.Timestamp".to_string()));
+                        let seconds = t.timestamp();
+                        let nanos = t.timestamp_subsec_nanos();
+                        let mut raw = Map::new();
+                        raw.insert("seconds".to_string(), Value::Number(Number::from(seconds)));
+                        raw.insert("nanos".to_string(), Value::Number(Number::from(nanos as i64)));
+                        value.insert("raw".to_string(), Value::Object(raw));
+                        Value::Object(value)
+                    },
+                    DatabaseValue::ConnectionState(c) => {
+                        let mut value = Map::new();
+                        value.insert("@type".to_string(), Value::String("type.googleapis.com/qdb.ConnectionState".to_string()));
+                        value.insert("raw".to_string(), Value::String(c.clone()));
+                        Value::Object(value)
+                    },
+                    DatabaseValue::GarageDoorState(g) => {
+                        let mut value = Map::new();
+                        value.insert("@type".to_string(), Value::String("type.googleapis.com/qdb.GarageDoorState".to_string()));
+                        value.insert("raw".to_string(), Value::String(g.clone()));
+                        Value::Object(value)
+                    },
+                };
+                request.insert("value".to_string(), value);
+                Value::Object(request)
+            }).collect());
+            payload.insert("requests".to_string(), requests);
+        }
+
+        request.insert("payload".to_string(), Value::Object(payload));
+
+        self.send(&request)?;
+
+        Ok(())
     }
     
     // fn register_notification(&self, config: NotificationConfig) -> Result<NotificationToken> {

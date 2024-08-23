@@ -1,4 +1,8 @@
-pub type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
+pub type Result<T> = core::result::Result<T, IError>;
+pub type IClient = Box<dyn ClientTrait>;
+pub type IError = Box<dyn std::error::Error>;
+
+use chrono::{DateTime, Utc};
 
 #[derive(Debug)]
 pub enum Error {
@@ -33,8 +37,6 @@ impl std::error::Error for Error {
         }
     }
 }
-
-pub type IClient = Box<dyn ClientTrait>;
 
 pub struct DatabaseEntity {
     entity_id: String,
@@ -71,7 +73,7 @@ pub enum DatabaseValue {
     Float(f64),
     Boolean(bool),
     EntityReference(String),
-    Timestamp(String),
+    Timestamp(DateTime<Utc>),
     ConnectionState(String),
     GarageDoorState(String),
 }
@@ -112,7 +114,7 @@ impl DatabaseValue {
         }
     }
 
-    pub fn as_timestamp(&self) -> Result<&String> {
+    pub fn as_timestamp(&self) -> Result<&DateTime<Utc>> {
         match self {
             DatabaseValue::Timestamp(t) => Ok(t),
             _ => Err(Error::from_database_field("Value is not a timestamp")),
@@ -183,7 +185,7 @@ impl DatabaseValue {
         }
     }
 
-    pub fn update_timestamp(&mut self, value: String) -> Result<()> {
+    pub fn update_timestamp(&mut self, value: DateTime<Utc>) -> Result<()> {
         match self {
             DatabaseValue::Timestamp(t) => {
                 *t = value;
