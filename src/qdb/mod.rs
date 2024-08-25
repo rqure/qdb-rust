@@ -39,31 +39,31 @@ impl std::error::Error for Error {
 }
 
 pub struct DatabaseEntity {
-    entity_id: String,
-    entity_type: String,
-    entity_name: String,
+    pub entity_id: String,
+    pub entity_type: String,
+    pub entity_name: String,
 }
 
 pub struct DatabaseField {
-    entity_id: String,
-    field: String,
-    value: DatabaseValue,
-    write_time: String,
-    writer_id: String,
+    pub entity_id: String,
+    pub field: String,
+    pub value: DatabaseValue,
+    pub write_time: String,
+    pub writer_id: String,
 }
 
 pub struct DatabaseNotification {
-    token: String,
-    current: DatabaseField,
-    previous: DatabaseField,
-    context: Vec<DatabaseField>
+    pub token: String,
+    pub current: DatabaseField,
+    pub previous: DatabaseField,
+    pub context: Vec<DatabaseField>
 }
 
 pub struct NotificationConfig {
-    entity_id: String,
-    field: String,
-    notify_on_change: bool,
-    context: Vec<String>
+    pub entity_id: String,
+    pub field: String,
+    pub notify_on_change: bool,
+    pub context: Vec<String>
 }
 
 pub type NotificationToken = String;

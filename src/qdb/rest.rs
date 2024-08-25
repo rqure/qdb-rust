@@ -31,7 +31,7 @@ impl Client {
             .into_json()
             .map_err(|e| Box::new(e))?;
 
-        match response {
+        match response {            
             Value::Object(client_id) => {
                 self.request_template = client_id;
                 Ok(())
@@ -53,6 +53,7 @@ impl Client {
 
     fn send(&mut self, request: &Map<String, Value>) -> Result<Value> {
         let attempts = 3;
+        let mut request = request.clone();
 
         for _ in 0..attempts {
             let response = ureq::post(format!("{}/api", self.url).as_str())
@@ -65,6 +66,12 @@ impl Client {
                 return Ok(response)
             } else {
                 self.authenticate()?;
+                match self.request_template.get("header") {
+                    Some(header) => {
+                        request.insert("header".to_string(), header.clone());
+                    },
+                    _ => {}
+                }
             }
         }
 
@@ -76,8 +83,8 @@ impl ClientTrait for Client {
     fn get_entity(&mut self, entity_id: &str) -> Result<DatabaseEntity> {
         let mut request = self.request_template.clone();
         let mut payload = Map::new();
-        payload.insert("@type".to_string(), Value::String("type.googleapis.com/qdb.WebRuntimeGetEntityRequest".to_string()));
-        payload.insert("entityId".to_string(), Value::String(entity_id.to_string()));
+        payload.insert("@type".to_string(), Value::String("type.googleapis.com/qdb.WebConfigGetEntityRequest".to_string()));
+        payload.insert("id".to_string(), Value::String(entity_id.to_string()));
         request.insert("payload".to_string(), Value::Object(payload));
 
         let response = self.send(&request)?;
