@@ -170,7 +170,7 @@ impl ClientTrait for Client {
             let requests = Value::Array(requests.iter().map(|r| {
                 let mut request = Map::new();
                 request.insert("id".to_string(), Value::String(r.entity_id.clone()));
-                request.insert("field".to_string(), Value::String(r.field.clone()));
+                request.insert("field".to_string(), Value::String(r.name.clone()));
                 Value::Object(request)
             }).collect());
             payload.insert("requests".to_string(), requests);
@@ -189,6 +189,8 @@ impl ClientTrait for Client {
         for entity in entities {
             match entity {
                 Value::Object(entity) => {
+                    println!("{:?}", entity);
+
                     let entity_id = entity
                         .get("id")
                         .and_then(|v| v.as_str())
@@ -203,7 +205,7 @@ impl ClientTrait for Client {
 
                     let field = requests
                         .iter_mut()
-                        .find(|r: &&mut DatabaseField| r.entity_id == entity_id && r.field == field_name)
+                        .find(|r: &&mut DatabaseField| r.entity_id == entity_id && r.name == field_name)
                         .ok_or(Error::from_client("Invalid response from server: Field not found"))?;
 
                     let value = entity
@@ -213,13 +215,20 @@ impl ClientTrait for Client {
 
                     let write_time = entity
                         .get("writeTime")
-                        .and_then(|v| v.as_str())
+                        .and_then(|v| v.as_object())
                         .ok_or(Error::from_client("Invalid response from server: write time is not valid"))?
-                        .to_string();
+                        .get("raw")
+                        .ok_or(Error::from_client("Invalid response from server: write time is not valid"))?
+                        .as_str()
+                        .ok_or(Error::from_client("Invalid response from server: write time is not valid"))?;
 
                     let writer_id = entity
                         .get("writerId")
-                        .and_then(|v| v.as_str())
+                        .and_then(|v| v.as_object())
+                        .ok_or(Error::from_client("Invalid response from server: writer id is not valid"))?
+                        .get("raw")
+                        .ok_or(Error::from_client("Invalid response from server: writer id is not valid"))?
+                        .as_str()
                         .ok_or(Error::from_client("Invalid response from server: writer id is not valid"))?
                         .to_string();
 
@@ -237,10 +246,12 @@ impl ClientTrait for Client {
                                 .to_string();
                             DatabaseValue::String(value)
                         },
-                        "type.googleapis.com/qdb.Int" => {
+                        "type.googleapis.com/qdb.Int" => {                    
                             let value = value
                                 .get("raw")
-                                .and_then(|v| v.as_i64())
+                                // should be as i64 but it's a limitation with jsonpb marshaller on server side
+                                .and_then(|v| v.as_str())
+                                .and_then(|v| v.parse::<i64>().ok() )
                                 .ok_or(Error::from_client("Invalid response from server: value is not valid"))?;
                             DatabaseValue::Integer(value)
                         },
@@ -269,18 +280,9 @@ impl ClientTrait for Client {
                         "type.googleapis.com/qdb.Timestamp" => {
                             let value = value
                                 .get("raw")
-                                .and_then(|v| v.as_object())
+                                .and_then(|v| v.as_str())
                                 .ok_or(Error::from_client("Invalid response from server: value is not valid"))?;
-                            let seconds = value
-                                .get("seconds")
-                                .and_then(|v| v.as_i64())
-                                .ok_or(Error::from_client("Invalid response from server: value is not valid"))?;
-                            let nanos = value
-                                .get("nanos")
-                                .and_then(|v| v.as_i64())
-                                .ok_or(Error::from_client("Invalid response from server: value is not valid"))?;
-                            let timestamp = DateTime::from_timestamp(seconds, nanos as u32)
-                                .ok_or(Error::from_client("Invalid response from server: value is not valid"))?;
+                            let timestamp = DateTime::parse_from_rfc3339(value)?.to_utc();
                             DatabaseValue::Timestamp(timestamp)
                         },
                         "type.googleapis.com/qdb.ConnectionState" => {
@@ -301,7 +303,7 @@ impl ClientTrait for Client {
                         },
                         _ => return Err(Error::from_client("Invalid response from server: value type is not valid"))
                     };
-                    field.write_time = write_time;
+                    field.write_time = DateTime::parse_from_rfc3339(write_time)?.to_utc();
                     field.writer_id = writer_id;
                 }
                 _ => return Err(Box::new(Error::ClientError("Invalid response from server: response is not an object".to_string())))
@@ -321,7 +323,7 @@ impl ClientTrait for Client {
             let requests = Value::Array(requests.iter().map(|r| {
                 let mut request = Map::new();
                 request.insert("id".to_string(), Value::String(r.entity_id.clone()));
-                request.insert("field".to_string(), Value::String(r.field.clone()));
+                request.insert("field".to_string(), Value::String(r.name.clone()));
                 let value = match &r.value {
                     DatabaseValue::String(s) => {
                         let mut value = Map::new();
@@ -378,6 +380,7 @@ impl ClientTrait for Client {
                         value.insert("raw".to_string(), Value::String(g.clone()));
                         Value::Object(value)
                     },
+                    _ => Value::Null
                 };
                 request.insert("value".to_string(), value);
                 Value::Object(request)

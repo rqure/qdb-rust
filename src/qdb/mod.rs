@@ -46,10 +46,22 @@ pub struct DatabaseEntity {
 
 pub struct DatabaseField {
     pub entity_id: String,
-    pub field: String,
+    pub name: String,
     pub value: DatabaseValue,
-    pub write_time: String,
+    pub write_time: DateTime<Utc>,
     pub writer_id: String,
+}
+
+impl DatabaseField {
+    pub fn new(entity_id: impl Into<String>, field: impl Into<String>) -> Self {
+        DatabaseField {
+            entity_id: entity_id.into(),
+            name: field.into(),
+            value: DatabaseValue::Unspecified,
+            write_time: Utc::now(),
+            writer_id: "".to_string(),
+        }
+    }
 }
 
 pub struct DatabaseNotification {
@@ -67,7 +79,10 @@ pub struct NotificationConfig {
 }
 
 pub type NotificationToken = String;
+
+#[derive(Debug)]
 pub enum DatabaseValue {
+    Unspecified,
     String(String),
     Integer(i64),
     Float(f64),

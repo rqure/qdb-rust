@@ -7,8 +7,17 @@ fn main() {
     match client.get_entities("Root") {
         Ok(entities) => {
             for entity in entities {
-                let e = client.get_entity("3d66362b-cd4d-4c54-8393-a3b20f3067b8").unwrap();
-                println!("Entity: {}", e.entity_name);
+                let mut fields = vec![
+                    qdb::DatabaseField::new(entity.entity_id, "SchemaUpdateTrigger")
+                ];
+
+                client.read(&mut fields).unwrap();
+
+                for field in fields {
+                    println!("{}: {:?}", field.name, field.value);
+                }
+
+                client.write(&mut fields);
             }
         }
         Err(e) => {
