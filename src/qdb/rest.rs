@@ -51,11 +51,13 @@ impl Client {
             .unwrap_or(false)
     }
 
-    fn send(&mut self, request: &Map<String, Value>) -> Result<Value> {
+    fn send(&mut self, payload: &Map<String, Value>) -> Result<Value> {
         let attempts = 3;
-        let mut request = request.clone();
 
         for _ in 0..attempts {
+            let mut request = self.request_template.clone();
+            request.insert("payload".to_string(), Value::Object(payload.clone()));
+
             let response = ureq::post(format!("{}/api", self.url).as_str())
                 .send_json(Value::Object(request.clone()))
                 .map_err(|e| Box::new(e))?
@@ -63,15 +65,11 @@ impl Client {
                 .map_err(|e| Box::new(e))?;
 
             if self.has_authenticated(&response) {
-                return Ok(response)
+                let response = response.get("payload")
+                    .ok_or(Error::from_client("Invalid response from server: payload is not valid"))?;
+                return Ok(response.clone());
             } else {
                 self.authenticate()?;
-                match self.request_template.get("header") {
-                    Some(header) => {
-                        request.insert("header".to_string(), header.clone());
-                    },
-                    _ => {}
-                }
             }
         }
 
@@ -81,17 +79,13 @@ impl Client {
 
 impl ClientTrait for Client {
     fn get_entity(&mut self, entity_id: &str) -> Result<DatabaseEntity> {
-        let mut request = self.request_template.clone();
-        let mut payload = Map::new();
-        payload.insert("@type".to_string(), Value::String("type.googleapis.com/qdb.WebConfigGetEntityRequest".to_string()));
-        payload.insert("id".to_string(), Value::String(entity_id.to_string()));
-        request.insert("payload".to_string(), Value::Object(payload));
+        let mut request = Map::new();
+        request.insert("@type".to_string(), Value::String("type.googleapis.com/qdb.WebConfigGetEntityRequest".to_string()));
+        request.insert("id".to_string(), Value::String(entity_id.to_string()));
 
         let response = self.send(&request)?;
         let entity = response
             .as_object()
-            .and_then(|o| o.get("payload"))
-            .and_then(|v| v.as_object())
             .and_then(|o| o.get("entity"))
             .and_then(|v| v.as_object())
             .ok_or(Error::from_client("Invalid response from server: Failed to extract entity"))?;
@@ -116,17 +110,13 @@ impl ClientTrait for Client {
     }
 
     fn get_entities(&mut self, entity_type: &str) -> Result<Vec<DatabaseEntity>> {
-        let mut request = self.request_template.clone();
-        let mut payload = Map::new();
-        payload.insert("@type".to_string(), Value::String("type.googleapis.com/qdb.WebRuntimeGetEntitiesRequest".to_string()));
-        payload.insert("entityType".to_string(), Value::String(entity_type.to_string()));
-        request.insert("payload".to_string(), Value::Object(payload));
+        let mut request = Map::new();
+        request.insert("@type".to_string(), Value::String("type.googleapis.com/qdb.WebRuntimeGetEntitiesRequest".to_string()));
+        request.insert("entityType".to_string(), Value::String(entity_type.to_string()));
 
         let response = self.send(&request)?;
         let entities = response
             .as_object()
-            .and_then(|o| o.get("payload"))
-            .and_then(|v| v.as_object())
             .and_then(|o| o.get("entities"))
             .and_then(|v| v.as_array())
             .ok_or(Error::from_client("Invalid response from server: Failed to extract entities"))?;
@@ -161,10 +151,9 @@ impl ClientTrait for Client {
     }
 
     fn read(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()> {
-        let mut request = self.request_template.clone();
-        let mut payload = Map::new();
-        payload.insert("@type".to_string(), Value::String("type.googleapis.com/qdb.WebRuntimeDatabaseRequest".to_string()));
-        payload.insert("requestType".to_string(), Value::String("READ".to_string()));
+        let mut request = Map::new();
+        request.insert("@type".to_string(), Value::String("type.googleapis.com/qdb.WebRuntimeDatabaseRequest".to_string()));
+        request.insert("requestType".to_string(), Value::String("READ".to_string()));
 
         {
             let requests = Value::Array(requests.iter().map(|r| {
@@ -173,15 +162,12 @@ impl ClientTrait for Client {
                 request.insert("field".to_string(), Value::String(r.name.clone()));
                 Value::Object(request)
             }).collect());
-            payload.insert("requests".to_string(), requests);
+            request.insert("requests".to_string(), requests);
         }
-        request.insert("payload".to_string(), Value::Object(payload));
 
         let response = self.send(&request)?;
         let entities = response
             .as_object()
-            .and_then(|o| o.get("payload"))
-            .and_then(|v| v.as_object())
             .and_then(|o| o.get("response"))
             .and_then(|v| v.as_array())
             .ok_or(Error::from_client("Invalid response from server: response is not valid"))?;
@@ -314,10 +300,9 @@ impl ClientTrait for Client {
     }
 
     fn write(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()> {
-        let mut request = self.request_template.clone();
-        let mut payload = Map::new();
-        payload.insert("@type".to_string(), Value::String("type.googleapis.com/qdb.WebRuntimeDatabaseRequest".to_string()));
-        payload.insert("requestType".to_string(), Value::String("WRITE".to_string()));
+        let mut request = Map::new();
+        request.insert("@type".to_string(), Value::String("type.googleapis.com/qdb.WebRuntimeDatabaseRequest".to_string()));
+        request.insert("requestType".to_string(), Value::String("WRITE".to_string()));
 
         {
             let requests = Value::Array(requests.iter().map(|r| {
@@ -385,10 +370,8 @@ impl ClientTrait for Client {
                 request.insert("value".to_string(), value);
                 Value::Object(request)
             }).collect());
-            payload.insert("requests".to_string(), requests);
+            request.insert("requests".to_string(), requests);
         }
-
-        request.insert("payload".to_string(), Value::Object(payload));
 
         self.send(&request)?;
 

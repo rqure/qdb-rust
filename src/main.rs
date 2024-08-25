@@ -13,11 +13,11 @@ fn main() {
 
                 client.read(&mut fields).unwrap();
 
-                for field in fields {
+                for field in &fields {
                     println!("{}: {:?}", field.name, field.value);
                 }
 
-                client.write(&mut fields);
+                client.write(&mut fields).unwrap();
             }
         }
         Err(e) => {
