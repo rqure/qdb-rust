@@ -4,6 +4,9 @@ use super::DatabaseEntity;
 use super::DatabaseField;
 use super::DatabaseValue;
 use super::ClientTrait;
+use super::NotificationConfig;
+use super::NotificationToken;
+use super::DatabaseNotification;
 
 use ureq::serde_json::Number;
 use ureq::serde_json::Value;
@@ -379,15 +382,41 @@ impl ClientTrait for Client {
         Ok(())
     }
     
-    // fn register_notification(&self, config: NotificationConfig) -> Result<NotificationToken> {
+    fn register_notification(&mut self, config: NotificationConfig) -> Result<NotificationToken> {
+        let context = config.context.iter().map(|v| {
+            Value::String(v.into())
+        }).collect();
 
-    // }
-
-    // fn unregister_notification(&self, token: NotificationToken) -> Result<()> {
+        let mut notification = Map::new();
+        notification.insert("id".to_string(), Value::String(config.entity_id));
+        notification.insert("type".to_string(), Value::String(config.entity_type));
+        notification.insert("field".to_string(), Value::String(config.field));
+        notification.insert("notifyOnChange".to_string(), Value::Bool(config.notify_on_change));
+        notification.insert("context".to_string(), Value::Array(context));
         
-    // }
+        let mut request = Map::new();
+        request.insert("@type".to_string(), Value::String("type.googleapis.com/qdb.WebRuntimeRegisterNotificationRequest".to_string()));
+        request.insert("requests".to_string(), Value::Array(vec![Value::Object(notification)]));
 
-    // fn process_notifications(&self) -> Result<Vec<DatabaseNotification>> {
+        let response = self.send(&request)?;
+        let token = response
+            .as_object()
+            .and_then(|o| o.get("tokens"))
+            .and_then(|v| v.as_array())
+            .ok_or(Error::from_client("Invalid response from server: token is not valid"))?
+            .get(0)
+            .ok_or(Error::from_client("Invalid response from server: token is not valid"))?
+            .as_str()
+            .ok_or(Error::from_client("Invalid response from server: token is not valid"))?;
+
+        Ok(token.to_string())
+    }
+
+    fn unregister_notification(&mut self, token: NotificationToken) -> Result<()> {
         
-    // }
+    }
+
+    fn process_notifications(&mut self) -> Result<Vec<DatabaseNotification>> {
+        
+    }
 }

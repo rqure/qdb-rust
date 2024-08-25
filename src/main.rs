@@ -10,6 +10,7 @@ fn main() {
     }));
     
     signal.emit(&("Hello".to_string(), 42));
+    signal.emit(&("Hello".to_string(), 43));
 
     let mut client = qdb::rest::Client::new("http://localhost:20000");
     match client.get_entities("Root") {

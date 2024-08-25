@@ -79,6 +79,7 @@ pub struct DatabaseNotification {
 #[derive(Debug)]
 pub struct NotificationConfig {
     pub entity_id: String,
+    pub entity_type: String,
     pub field: String,
     pub notify_on_change: bool,
     pub context: Vec<String>
@@ -242,9 +243,9 @@ pub trait ClientTrait {
     fn get_entities(&mut self, entity_type: &str) -> Result<Vec<DatabaseEntity>>;
     fn read(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()>;
     fn write(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()>;
-    // fn register_notification(&self, config: NotificationConfig) -> Result<NotificationToken>;
-    // fn unregister_notification(&self, token: NotificationToken) -> Result<()>;
-    // fn process_notifications(&self) -> Result<Vec<DatabaseNotification>>;
+    fn register_notification(&mut self, config: NotificationConfig) -> Result<NotificationToken>;
+    fn unregister_notification(&mut self, token: NotificationToken) -> Result<()>;
+    fn process_notifications(&mut self) -> Result<Vec<DatabaseNotification>>;
 }
 
 pub mod rest;
