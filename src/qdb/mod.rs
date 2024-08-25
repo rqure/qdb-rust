@@ -292,9 +292,9 @@ pub struct SignalSlotConnection<'a, F: FnMut(&T), T>
     signal: &'a mut Signal<F, T>,
 }
 
-impl<'a, F: FnMut(&T), T> Drop for SignalSlotConnection<'a, F, T>
+impl<'a, F: FnMut(&T), T> SignalSlotConnection<'a, F, T>
 {
-    fn drop(&mut self)
+    fn disconnect(&mut self)
     {
         self.signal.disconnect(self.id);
     }
