@@ -53,12 +53,13 @@ impl Client {
 
     fn send(&mut self, payload: &Map<String, Value>) -> Result<Value> {
         let attempts = 3;
+        let url = format!("{}/api", self.url);
 
         for _ in 0..attempts {
             let mut request = self.request_template.clone();
             request.insert("payload".to_string(), Value::Object(payload.clone()));
 
-            let response = ureq::post(format!("{}/api", self.url).as_str())
+            let response = ureq::post(&url)
                 .send_json(Value::Object(request.clone()))
                 .map_err(|e| Box::new(e))?
                 .into_json()
