@@ -1,3 +1,4 @@
+use chrono::Local;
 use qdb::ClientTrait;
 
 mod qdb;
@@ -14,10 +15,8 @@ fn main() {
                 client.read(&mut fields).unwrap();
 
                 for field in &fields {
-                    println!("{}: {:?}", field.name, field.value);
+                    println!("{}: {:?}: {}", field.name, field.value, field.write_time.with_timezone(&Local));
                 }
-
-                client.write(&mut fields).unwrap();
             }
         }
         Err(e) => {

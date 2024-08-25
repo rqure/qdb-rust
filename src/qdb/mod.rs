@@ -2,6 +2,8 @@ pub type Result<T> = core::result::Result<T, IError>;
 pub type IClient = Box<dyn ClientTrait>;
 pub type IError = Box<dyn std::error::Error>;
 
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use chrono::{DateTime, Utc};
 
 #[derive(Debug)]
@@ -38,12 +40,14 @@ impl std::error::Error for Error {
     }
 }
 
+#[derive(Debug)]
 pub struct DatabaseEntity {
     pub entity_id: String,
     pub entity_type: String,
     pub entity_name: String,
 }
 
+#[derive(Debug)]
 pub struct DatabaseField {
     pub entity_id: String,
     pub name: String,
@@ -64,6 +68,7 @@ impl DatabaseField {
     }
 }
 
+#[derive(Debug)]
 pub struct DatabaseNotification {
     pub token: String,
     pub current: DatabaseField,
@@ -71,6 +76,7 @@ pub struct DatabaseNotification {
     pub context: Vec<DatabaseField>
 }
 
+#[derive(Debug)]
 pub struct NotificationConfig {
     pub entity_id: String,
     pub field: String,
@@ -242,3 +248,84 @@ pub trait ClientTrait {
 }
 
 pub mod rest;
+
+pub trait SlotTrait<T> {
+    fn call(&mut self, args: T);
+}
+
+pub struct Slot<F>
+{
+    callback: F
+}
+
+impl<F> Slot<F>
+{
+    pub fn new(callback: F) -> Self
+    {
+        Slot { callback }
+    }
+
+    pub fn call<T>(&mut self, args: &T)
+    where
+        F: FnMut(&T)
+    {
+        (self.callback)(args);
+    }
+}
+
+pub trait SignalTrait<F, T>
+{
+    fn connect(&mut self, slot: Slot<F>);
+    fn disconnect(&mut self, id: usize);
+    fn emit(&mut self, args: &T);
+}
+
+pub struct Signal<F>
+{
+    slots: HashMap<usize, Slot<F>>,
+}
+
+pub struct SignalSlotConnection<'a, F>
+{
+    id: usize,
+    signal: &'a mut Signal<F>,
+}
+
+impl<'a, F> SignalSlotConnection<'a, F>
+{
+    pub fn disconnect(&mut self)
+    {
+        self.signal.disconnect(self.id);
+    }
+}
+
+impl<F> Signal<F>
+{
+    pub fn new() -> Self
+    {
+        Signal { slots: HashMap::new() }
+    }
+}
+
+impl<F: FnMut(&T), T> SignalTrait<F, T> for Signal<F>
+{
+    fn connect(&mut self, slot: Slot<F>)
+    {
+        static COUNTER : AtomicUsize = AtomicUsize::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        self.slots.insert(id, slot);
+    }
+
+    fn disconnect(&mut self, id: usize)
+    {
+        self.slots.remove(&id);
+    }
+
+    fn emit(&mut self, args: &T)
+    {
+        for (_, slot) in self.slots.iter_mut()
+        {
+            slot.call(args);
+        }
+    }
+}
