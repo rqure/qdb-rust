@@ -273,47 +273,49 @@ impl<F> Slot<F>
     }
 }
 
-pub trait SignalTrait<F, T>
+pub trait SignalTrait<F: FnMut(&T), T>
 {
-    fn connect(&mut self, slot: Slot<F>);
+    fn connect(&mut self, slot: Slot<F>) -> SignalSlotConnection<F, T>;
     fn disconnect(&mut self, id: usize);
     fn emit(&mut self, args: &T);
 }
 
-pub struct Signal<F>
+pub struct Signal<F: FnMut(&T), T>
 {
     slots: HashMap<usize, Slot<F>>,
+    args: std::marker::PhantomData<T>,
 }
 
-pub struct SignalSlotConnection<'a, F>
+pub struct SignalSlotConnection<'a, F: FnMut(&T), T>
 {
     id: usize,
-    signal: &'a mut Signal<F>,
+    signal: &'a mut Signal<F, T>,
 }
 
-impl<'a, F> SignalSlotConnection<'a, F>
+impl<'a, F: FnMut(&T), T> Drop for SignalSlotConnection<'a, F, T>
 {
-    pub fn disconnect(&mut self)
+    fn drop(&mut self)
     {
         self.signal.disconnect(self.id);
     }
 }
 
-impl<F> Signal<F>
+impl<F: FnMut(&T), T> Signal<F, T>
 {
     pub fn new() -> Self
     {
-        Signal { slots: HashMap::new() }
+        Signal { slots: HashMap::new(), args: std::marker::PhantomData }
     }
 }
 
-impl<F: FnMut(&T), T> SignalTrait<F, T> for Signal<F>
+impl<F: FnMut(&T), T> SignalTrait<F, T> for Signal<F, T>
 {
-    fn connect(&mut self, slot: Slot<F>)
+    fn connect(&mut self, slot: Slot<F>) -> SignalSlotConnection<F, T>
     {
         static COUNTER : AtomicUsize = AtomicUsize::new(0);
         let id = COUNTER.fetch_add(1, Ordering::Relaxed);
         self.slots.insert(id, slot);
+        SignalSlotConnection { id, signal: self }
     }
 
     fn disconnect(&mut self, id: usize)
