@@ -12,7 +12,7 @@ use ureq::serde_json::Number;
 use ureq::serde_json::Value;
 use ureq::serde_json::Map;
 
-use chrono::DateTime;
+use chrono::{DateTime, Utc, prelude};
 
 pub struct Client {
     url: String,
@@ -513,7 +513,7 @@ impl ClientTrait for Client {
                     .and_then(|v| v.as_array())
                     .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
                     .iter()
-                    .filter_map(|v| {
+                    .map(|v| {
                         DatabaseField{
                             entity_id: v.pointer("/id")
                                 .and_then(|v| v.as_str())
@@ -526,22 +526,25 @@ impl ClientTrait for Client {
                             write_time: DateTime::parse_from_rfc3339(v.pointer("/writeTime")
                                 .and_then(|v| v.as_object())
                                 .and_then(|v| v.get("raw"))
+                                .and_then(|v| v.as_str())
                                 .unwrap_or("")
-                                .to_string(),
+                                .to_string()
+                                .as_str())
+                                .unwrap_or_else(|_| Utc::now().fixed_offset() )
+                                .to_utc(),
                             writer_id: v.pointer("/writerId")
                                 .and_then(|v| v.as_object())
-                                .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
-                                .get("raw")
-                                .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
-                                .as_str()
-                                .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                                .and_then(|v| v.get("raw"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
                                 .to_string(),
                             value: Client::extract_value(v.pointer("/value")
                                 .and_then(|v| v.as_object())
-                                .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?)?
+                                .unwrap_or(&Map::new()))
+                                .unwrap_or(DatabaseValue::Unspecified)
                         }
                     })
-                    .collect()?
+                    .collect()
             });
         }
 
