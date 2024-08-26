@@ -79,6 +79,82 @@ impl Client {
 
         Err(Box::new(Error::ClientError("Failed to authenticate".to_string())))
     }
+
+    fn extract_value(value: &Map<String, Value>) -> Result<DatabaseValue> {
+        let value_type = value
+            .get("@type")
+            .and_then(|v| v.as_str())
+            .ok_or(Error::from_client("Invalid response from server: value type is not valid"))?;
+
+        let value = match value_type {
+            "type.googleapis.com/qdb.String" => {
+                let value = value
+                    .get("raw")
+                    .and_then(|v| v.as_str())
+                    .ok_or(Error::from_client("Invalid response from server: value is not valid"))?
+                    .to_string();
+                DatabaseValue::String(value)
+            },
+            "type.googleapis.com/qdb.Int" => {                    
+                let value = value
+                    .get("raw")
+                    // should be as i64 but it's a limitation with jsonpb marshaller on server side
+                    .and_then(|v| v.as_str())
+                    .and_then(|v| v.parse::<i64>().ok() )
+                    .ok_or(Error::from_client("Invalid response from server: value is not valid"))?;
+                DatabaseValue::Integer(value)
+            },
+            "type.googleapis.com/qdb.Float" => {
+                let value = value
+                    .get("raw")
+                    .and_then(|v| v.as_f64())
+                    .ok_or(Error::from_client("Invalid response from server: value is not valid"))?;
+                DatabaseValue::Float(value)
+            },
+            "type.googleapis.com/qdb.Bool" => {
+                let value = value
+                    .get("raw")
+                    .and_then(|v| v.as_bool())
+                    .ok_or(Error::from_client("Invalid response from server: value is not valid"))?;
+                DatabaseValue::Boolean(value)
+            },
+            "type.googleapis.com/qdb.EntityReference" => {
+                let value = value
+                    .get("raw")
+                    .and_then(|v| v.as_str())
+                    .ok_or(Error::from_client("Invalid response from server: value is not valid"))?
+                    .to_string();
+                DatabaseValue::EntityReference(value)
+            },
+            "type.googleapis.com/qdb.Timestamp" => {
+                let value = value
+                    .get("raw")
+                    .and_then(|v| v.as_str())
+                    .ok_or(Error::from_client("Invalid response from server: value is not valid"))?;
+                let timestamp = DateTime::parse_from_rfc3339(value)?.to_utc();
+                DatabaseValue::Timestamp(timestamp)
+            },
+            "type.googleapis.com/qdb.ConnectionState" => {
+                let value = value
+                    .get("raw")
+                    .and_then(|v| v.as_str())
+                    .ok_or(Error::from_client("Invalid response from server: value is not valid"))?
+                    .to_string();
+                DatabaseValue::ConnectionState(value)
+            },
+            "type.googleapis.com/qdb.GarageDoorState" => {
+                let value = value
+                    .get("raw")
+                    .and_then(|v| v.as_str())
+                    .ok_or(Error::from_client("Invalid response from server: value is not valid"))?
+                    .to_string();
+                DatabaseValue::GarageDoorState(value)
+            },
+            _ => return Err(Error::from_client("Invalid response from server: value type is not valid"))
+        };
+
+        Ok(value)
+    }
 }
 
 impl ClientTrait for Client {
@@ -222,77 +298,7 @@ impl ClientTrait for Client {
                         .ok_or(Error::from_client("Invalid response from server: writer id is not valid"))?
                         .to_string();
 
-                    let value_type = value
-                        .get("@type")
-                        .and_then(|v| v.as_str())
-                        .ok_or(Error::from_client("Invalid response from server: value type is not valid"))?;
-
-                    field.value = match value_type {
-                        "type.googleapis.com/qdb.String" => {
-                            let value = value
-                                .get("raw")
-                                .and_then(|v| v.as_str())
-                                .ok_or(Error::from_client("Invalid response from server: value is not valid"))?
-                                .to_string();
-                            DatabaseValue::String(value)
-                        },
-                        "type.googleapis.com/qdb.Int" => {                    
-                            let value = value
-                                .get("raw")
-                                // should be as i64 but it's a limitation with jsonpb marshaller on server side
-                                .and_then(|v| v.as_str())
-                                .and_then(|v| v.parse::<i64>().ok() )
-                                .ok_or(Error::from_client("Invalid response from server: value is not valid"))?;
-                            DatabaseValue::Integer(value)
-                        },
-                        "type.googleapis.com/qdb.Float" => {
-                            let value = value
-                                .get("raw")
-                                .and_then(|v| v.as_f64())
-                                .ok_or(Error::from_client("Invalid response from server: value is not valid"))?;
-                            DatabaseValue::Float(value)
-                        },
-                        "type.googleapis.com/qdb.Bool" => {
-                            let value = value
-                                .get("raw")
-                                .and_then(|v| v.as_bool())
-                                .ok_or(Error::from_client("Invalid response from server: value is not valid"))?;
-                            DatabaseValue::Boolean(value)
-                        },
-                        "type.googleapis.com/qdb.EntityReference" => {
-                            let value = value
-                                .get("raw")
-                                .and_then(|v| v.as_str())
-                                .ok_or(Error::from_client("Invalid response from server: value is not valid"))?
-                                .to_string();
-                            DatabaseValue::EntityReference(value)
-                        },
-                        "type.googleapis.com/qdb.Timestamp" => {
-                            let value = value
-                                .get("raw")
-                                .and_then(|v| v.as_str())
-                                .ok_or(Error::from_client("Invalid response from server: value is not valid"))?;
-                            let timestamp = DateTime::parse_from_rfc3339(value)?.to_utc();
-                            DatabaseValue::Timestamp(timestamp)
-                        },
-                        "type.googleapis.com/qdb.ConnectionState" => {
-                            let value = value
-                                .get("raw")
-                                .and_then(|v| v.as_str())
-                                .ok_or(Error::from_client("Invalid response from server: value is not valid"))?
-                                .to_string();
-                            DatabaseValue::ConnectionState(value)
-                        },
-                        "type.googleapis.com/qdb.GarageDoorState" => {
-                            let value = value
-                                .get("raw")
-                                .and_then(|v| v.as_str())
-                                .ok_or(Error::from_client("Invalid response from server: value is not valid"))?
-                                .to_string();
-                            DatabaseValue::GarageDoorState(value)
-                        },
-                        _ => return Err(Error::from_client("Invalid response from server: value type is not valid"))
-                    };
+                    field.value = Client::extract_value(value)?;
                     field.write_time = DateTime::parse_from_rfc3339(write_time)?.to_utc();
                     field.writer_id = writer_id;
                 }
@@ -435,12 +441,108 @@ impl ClientTrait for Client {
 
         let mut result = vec![];
         for notification in notifications {
-            match notification {
-                Value::Object(notification) => {
-                    
+            result.push(DatabaseNotification{
+                token: notification.pointer("/token")
+                    .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                    .as_str()
+                    .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                    .into(),
+                current: DatabaseField{
+                    entity_id: notification.pointer("/current/id")
+                        .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                        .as_str()
+                        .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                        .into(),
+                    name: notification.pointer("/current/name")
+                        .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                        .as_str()
+                        .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                        .into(),
+                    write_time: DateTime::parse_from_rfc3339(notification.pointer("/current/writeTime")
+                        .and_then(|v| v.as_object())
+                        .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                        .get("raw")
+                        .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                        .as_str()
+                        .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?)?
+                        .to_utc(),
+                    writer_id: notification.pointer("/current/writeTime")
+                        .and_then(|v| v.as_object())
+                        .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                        .get("raw")
+                        .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                        .as_str()
+                        .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                        .to_string(),
+                    value: Client::extract_value(notification.pointer("/current/value")
+                        .and_then(|v| v.as_object())
+                        .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?)?
                 },
-                _ => return Err(Error::from_client(""))
-            }
+                previous: DatabaseField{
+                    entity_id: notification.pointer("/previous/id")
+                        .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                        .as_str()
+                        .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                        .into(),
+                    name: notification.pointer("/previous/name")
+                        .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                        .as_str()
+                        .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                        .into(),
+                    write_time: DateTime::parse_from_rfc3339(notification.pointer("/previous/writeTime")
+                        .and_then(|v| v.as_object())
+                        .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                        .get("raw")
+                        .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                        .as_str()
+                        .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?)?
+                        .to_utc(),
+                    writer_id: notification.pointer("/previous/writerId")
+                        .and_then(|v| v.as_object())
+                        .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                        .get("raw")
+                        .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                        .as_str()
+                        .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                        .to_string(),
+                    value: Client::extract_value(notification.pointer("/previous/value")
+                        .and_then(|v| v.as_object())
+                        .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?)?
+                },
+                context: notification.pointer("/context")
+                    .and_then(|v| v.as_array())
+                    .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                    .iter()
+                    .filter_map(|v| {
+                        DatabaseField{
+                            entity_id: v.pointer("/id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            name: v.pointer("/name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            write_time: DateTime::parse_from_rfc3339(v.pointer("/writeTime")
+                                .and_then(|v| v.as_object())
+                                .and_then(|v| v.get("raw"))
+                                .unwrap_or("")
+                                .to_string(),
+                            writer_id: v.pointer("/writerId")
+                                .and_then(|v| v.as_object())
+                                .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                                .get("raw")
+                                .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                                .as_str()
+                                .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?
+                                .to_string(),
+                            value: Client::extract_value(v.pointer("/value")
+                                .and_then(|v| v.as_object())
+                                .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?)?
+                        }
+                    })
+                    .collect()?
+            });
         }
 
         Ok(result)
