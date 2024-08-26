@@ -5,12 +5,14 @@ mod qdb;
 
 fn main() {
     let mut signal = qdb::Signal::new();
-    let token = signal.connect(qdb::Slot::new(|args: &(String, i16)| {
+    let mut token = signal.connect(qdb::Slot::new(|args: &(String, i16)| {
         println!("Signal emitted: {}", args.1);
     }));
     
     signal.emit(&("Hello".to_string(), 42));
     signal.emit(&("Hello".to_string(), 43));
+
+    token.disconnect();
 
     let mut client = qdb::rest::Client::new("http://localhost:20000");
     match client.get_entities("Root") {

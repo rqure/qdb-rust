@@ -287,17 +287,17 @@ pub struct Signal<F: FnMut(&T), T>
     args: std::marker::PhantomData<T>,
 }
 
-pub struct SignalSlotConnection<'a, F: FnMut(&T), T>
+pub struct SignalSlotConnection<F: FnMut(&T), T>
 {
     id: usize,
-    signal: &'a mut Signal<F, T>,
+    signal: std::rc::Rc<std::cell::RefCell<Signal<F, T>>>,
 }
 
-impl<'a, F: FnMut(&T), T> SignalSlotConnection<'a, F, T>
+impl<F: FnMut(&T), T> SignalSlotConnection<F, T>
 {
-    fn disconnect(&mut self)
+    pub fn disconnect(&mut self)
     {
-        self.signal.disconnect(self.id);
+        self.signal.borrow_mut().disconnect(self.id);
     }
 }
 
