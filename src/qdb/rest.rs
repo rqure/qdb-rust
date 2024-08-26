@@ -413,10 +413,36 @@ impl ClientTrait for Client {
     }
 
     fn unregister_notification(&mut self, token: NotificationToken) -> Result<()> {
-        
+        let mut request = Map::new();
+        request.insert("@type".to_string(), Value::String("type.googleapis.com/qdb.WebRuntimeUnregisterNotificationRequest".to_string()));
+        request.insert("tokens".to_string(), Value::Array(vec![Value::String(token)]));
+
+        self.send(&request)?;
+
+        Ok(())
     }
 
     fn process_notifications(&mut self) -> Result<Vec<DatabaseNotification>> {
-        
+        let mut request = Map::new();
+        request.insert("@type".to_string(), Value::String("type.googleapis.com/qdb.WebRuntimeGetNotificationsResponse".to_string()));
+
+        let response = self.send(&request)?;
+        let notifications = response
+            .as_object()
+            .and_then(|o| o.get("notifications"))
+            .and_then(|v| v.as_array())
+            .ok_or(Error::from_client("Invalid response from server: notifications is not valid"))?;
+
+        let mut result = vec![];
+        for notification in notifications {
+            match notification {
+                Value::Object(notification) => {
+                    
+                },
+                _ => return Err(Error::from_client(""))
+            }
+        }
+
+        Ok(result)
     }
 }
