@@ -2,6 +2,8 @@ pub type Result<T> = core::result::Result<T, IError>;
 pub type IClient = Box<dyn ClientTrait>;
 pub type IError = Box<dyn std::error::Error>;
 
+use std::cell::RefCell;
+use std::rc::{Rc, Weak};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use chrono::{DateTime, Utc};
@@ -281,23 +283,31 @@ pub trait SignalTrait<F: FnMut(&T), T>
     fn emit(&mut self, args: &T);
 }
 
-pub struct Signal<F: FnMut(&T), T>
+struct SignalInternal<F: FnMut(&T), T>
 {
     slots: HashMap<usize, Slot<F>>,
     args: std::marker::PhantomData<T>,
 }
 
+pub struct Signal<F: FnMut(&T), T>
+{
+    internal: Rc<RefCell<SignalInternal<F, T>>>
+}
+
 pub struct SignalSlotConnection<F: FnMut(&T), T>
 {
     id: usize,
-    signal: std::rc::Rc<std::cell::RefCell<Signal<F, T>>>,
+    signal: std::rc::Weak<RefCell<SignalInternal<F, T>>>
 }
 
 impl<F: FnMut(&T), T> SignalSlotConnection<F, T>
 {
     pub fn disconnect(&mut self)
     {
-        self.signal.borrow_mut().disconnect(self.id);
+        if let Some(signal) = self.signal.upgrade()
+        {
+            signal.borrow_mut().slots.remove(&self.id);
+        }
     }
 }
 
@@ -305,7 +315,9 @@ impl<F: FnMut(&T), T> Signal<F, T>
 {
     pub fn new() -> Self
     {
-        Signal { slots: HashMap::new(), args: std::marker::PhantomData }
+        Signal {
+            internal: Rc::new(RefCell::new(SignalInternal { slots: HashMap::new(), args: std::marker::PhantomData }))
+        }
     }
 }
 
@@ -315,18 +327,18 @@ impl<F: FnMut(&T), T> SignalTrait<F, T> for Signal<F, T>
     {
         static COUNTER : AtomicUsize = AtomicUsize::new(0);
         let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-        self.slots.insert(id, slot);
-        SignalSlotConnection { id, signal: self }
+        self.internal.borrow_mut().slots.insert(id, slot);
+        SignalSlotConnection { id, signal: Rc::downgrade(&self.internal) }
     }
 
     fn disconnect(&mut self, id: usize)
     {
-        self.slots.remove(&id);
+        self.internal.borrow_mut().slots.remove(&id);
     }
 
     fn emit(&mut self, args: &T)
     {
-        for (_, slot) in self.slots.iter_mut()
+        for (_, slot) in self.internal.borrow_mut().slots.iter_mut()
         {
             slot.call(args);
         }
