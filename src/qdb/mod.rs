@@ -1,5 +1,6 @@
 pub type Result<T> = core::result::Result<T, IError>;
 pub type IClient = Box<dyn ClientTrait>;
+pub type IWorker = Box<dyn WorkTrait>;
 pub type IError = Box<dyn std::error::Error>;
 
 use std::cell::RefCell;
@@ -342,5 +343,125 @@ impl<F: FnMut(&T), T> SignalTrait<F, T> for Signal<F, T>
         {
             slot.call(args);
         }
+    }
+}
+
+pub enum LogLevel
+{
+    Trace,
+    Debug,
+    Info,
+    Warning,
+    Error
+}
+
+pub trait LoggerTrait
+{
+    fn log(&mut self, level: LogLevel, message: &str);
+
+    fn trace(&mut self, message: &str)
+    {
+        self.log(LogLevel::Trace, message);
+    }
+
+    fn debug(&mut self, message: &str)
+    {
+        self.log(LogLevel::Debug, message);
+    }
+
+    fn info(&mut self, message: &str)
+    {
+        self.log(LogLevel::Info, message);
+    }
+
+    fn warning(&mut self, message: &str)
+    {
+        self.log(LogLevel::Warning, message);
+    }
+
+    fn error(&mut self, message: &str)
+    {
+        self.log(LogLevel::Error, message);
+    }
+}
+
+pub trait ApplicationTrait
+{
+    fn execute(&mut self);
+    fn quit(&mut self);
+}
+
+pub trait WorkTrait
+{
+    fn intialize(&mut self) -> Result<()>;
+    fn do_work(&mut self) -> Result<()>;
+    fn deinitialize(&mut self) -> Result<()>;
+}
+
+pub struct Application
+{
+    workers: Vec<IWorker>,
+    running: bool
+}
+
+impl Application
+{
+    pub fn new() -> Self
+    {
+        Application { workers: vec![], running: false }
+    }
+}
+
+impl ApplicationTrait for Application
+{
+    fn execute(&mut self)
+    {
+        self.running = true;
+
+        for worker in &mut self.workers
+        {
+            match worker.intialize() {
+                Ok(_) => {},
+                Err(e) => {
+                    println!("Error: {}", e);
+                }
+            }
+        }
+
+        while self.running
+        {
+            for worker in &mut self.workers
+            {
+                match worker.do_work() {
+                    Ok(_) => {},
+                    Err(e) => {
+                        println!("Error: {}", e);
+                    }
+                }
+            }
+        }
+
+        for worker in &mut self.workers
+        {
+            match worker.deinitialize() {
+                Ok(_) => {},
+                Err(e) => {
+                    println!("Error: {}", e);
+                }
+            }
+        }
+    }
+
+    fn quit(&mut self)
+    {
+        self.running = false;
+    }
+}
+
+impl Application
+{
+    pub fn add_worker(&mut self, worker: IWorker)
+    {
+        self.workers.push(worker);
     }
 }
