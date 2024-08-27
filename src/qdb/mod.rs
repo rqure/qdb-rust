@@ -1,7 +1,9 @@
 pub type Result<T> = core::result::Result<T, IError>;
-pub type IClient = Box<dyn ClientTrait>;
+pub type IClient = Rc<dyn ClientTrait>;
 pub type IWorker = Box<dyn WorkTrait>;
 pub type IError = Box<dyn std::error::Error>;
+pub type IField = Box<dyn FieldTrait>;
+pub type IEntity = Box<dyn EntityTrait>;
 
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
@@ -252,6 +254,100 @@ pub trait ClientTrait {
 }
 
 pub mod rest;
+
+pub trait FieldTrait {
+    fn name(&self) -> &str;
+    fn value(&self) -> &DatabaseValue;
+    fn write_time(&self) -> &DateTime<Utc>;
+    fn writer_id(&self) -> &str;
+    fn pull(&mut self) -> Result<()>;
+    fn push(&mut self) -> Result<()>;
+}
+
+pub struct Field {
+    inner: Vec<DatabaseField>,
+    client: IClient
+}
+
+impl Field {
+    pub fn new(client: IClient, entity_id: impl Into<String>, field: impl Into<String>) -> IField {
+        let mut field = Field {
+            inner: vec![DatabaseField::new(entity_id, field)],
+            client
+        };
+
+        field.pull();
+
+        Box::new(field)
+    }
+}
+
+impl FieldTrait for Field {
+    fn name(&self) -> &str {
+        &self.inner[0].name
+    }
+
+    fn value(&self) -> &DatabaseValue {
+        &self.inner[0].value
+    }
+
+    fn write_time(&self) -> &DateTime<Utc> {
+        &self.inner[0].write_time
+    }
+
+    fn writer_id(&self) -> &str {
+        &self.inner[0].writer_id
+    }
+
+    fn pull(&mut self) -> Result<()> {
+        self.client.read(&mut self.inner)
+    }
+
+    fn push(&mut self) -> Result<()> {
+        self.client.write(&mut self.inner)
+    }
+}
+
+pub trait EntityTrait {
+    fn entity_id(&self) -> &str;
+    fn entity_type(&self) -> &str;
+    fn entity_name(&self) -> &str;
+    fn field(&self, field_name: &str) -> IField;
+}
+
+pub struct Entity {
+    inner: DatabaseEntity,
+    client: IClient
+}
+
+impl Entity {
+    pub fn new(mut client: IClient, entity_id: &str) -> Result<IEntity> {
+        let entity = Entity {
+            inner: client.get_entity(entity_id)?,
+            client
+        };
+
+        Ok(Box::new(entity))
+    }
+}
+
+impl EntityTrait for Entity {
+    fn entity_id(&self) -> &str {
+        &self.inner.entity_id
+    }
+
+    fn entity_type(&self) -> &str {
+        &self.inner.entity_type
+    }
+
+    fn entity_name(&self) -> &str {
+        &self.inner.entity_name
+    }
+
+    fn field(&self, field_name: &str) -> IField {
+        Field::new(&*self.client, self.inner.entity_id.clone(), field_name)
+    }
+}
 
 pub trait SlotTrait<T> {
     fn call(&mut self, args: T);

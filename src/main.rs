@@ -14,6 +14,8 @@ fn main() {
 
     token.disconnect();
 
+    signal.emit(&("Hello".to_string(), 44));
+
     let mut client = qdb::rest::Client::new("http://localhost:20000");
     match client.get_entities("Root") {
         Ok(entities) => {
