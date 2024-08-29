@@ -415,13 +415,13 @@ impl ClientTrait for Client {
             .as_str()
             .ok_or(Error::from_client("Invalid response from server: token is not valid"))?;
 
-        Ok(token.to_string())
+        Ok(NotificationToken(token.to_string()))
     }
 
     fn unregister_notification(&mut self, token: NotificationToken) -> Result<()> {
         let mut request = Map::new();
         request.insert("@type".to_string(), Value::String("type.googleapis.com/qdb.WebRuntimeUnregisterNotificationRequest".to_string()));
-        request.insert("tokens".to_string(), Value::Array(vec![Value::String(token)]));
+        request.insert("tokens".to_string(), Value::Array(vec![Value::String(token.into())]));
 
         self.send(&request)?;
 

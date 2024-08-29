@@ -1,14 +1,10 @@
-pub type Result<T> = core::result::Result<T, IError>;
-pub type IClient = Rc<dyn ClientTrait>;
-pub type IWorker = Box<dyn WorkTrait>;
-pub type IError = Box<dyn std::error::Error>;
-pub type IField = Box<dyn FieldTrait>;
-pub type IEntity = Box<dyn EntityTrait>;
+pub type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
 
 use std::cell::RefCell;
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Instant;
 use chrono::{DateTime, Utc};
 
 #[derive(Debug)]
@@ -90,7 +86,13 @@ pub struct NotificationConfig {
     pub context: Vec<String>
 }
 
-pub type NotificationToken = String;
+pub struct NotificationToken(String);
+
+impl Into<String> for NotificationToken {
+    fn into(self) -> String {
+        self.0
+    }
+}
 
 #[derive(Debug)]
 pub enum DatabaseValue {
@@ -253,101 +255,13 @@ pub trait ClientTrait {
     fn process_notifications(&mut self) -> Result<Vec<DatabaseNotification>>;
 }
 
+pub trait DatabaseTrait {}
+
+pub struct Database {
+    notifications: HashMap<NotificationToken, NotificationConfig>,
+}
+
 pub mod rest;
-
-pub trait FieldTrait {
-    fn name(&self) -> &str;
-    fn value(&self) -> &DatabaseValue;
-    fn write_time(&self) -> &DateTime<Utc>;
-    fn writer_id(&self) -> &str;
-    fn pull(&mut self) -> Result<()>;
-    fn push(&mut self) -> Result<()>;
-}
-
-pub struct Field {
-    inner: Vec<DatabaseField>,
-    client: IClient
-}
-
-impl Field {
-    pub fn new(client: IClient, entity_id: impl Into<String>, field: impl Into<String>) -> IField {
-        let mut field = Field {
-            inner: vec![DatabaseField::new(entity_id, field)],
-            client
-        };
-
-        field.pull();
-
-        Box::new(field)
-    }
-}
-
-impl FieldTrait for Field {
-    fn name(&self) -> &str {
-        &self.inner[0].name
-    }
-
-    fn value(&self) -> &DatabaseValue {
-        &self.inner[0].value
-    }
-
-    fn write_time(&self) -> &DateTime<Utc> {
-        &self.inner[0].write_time
-    }
-
-    fn writer_id(&self) -> &str {
-        &self.inner[0].writer_id
-    }
-
-    fn pull(&mut self) -> Result<()> {
-        self.client.read(&mut self.inner)
-    }
-
-    fn push(&mut self) -> Result<()> {
-        self.client.write(&mut self.inner)
-    }
-}
-
-pub trait EntityTrait {
-    fn entity_id(&self) -> &str;
-    fn entity_type(&self) -> &str;
-    fn entity_name(&self) -> &str;
-    fn field(&self, field_name: &str) -> IField;
-}
-
-pub struct Entity {
-    inner: DatabaseEntity,
-    client: IClient
-}
-
-impl Entity {
-    pub fn new(mut client: IClient, entity_id: &str) -> Result<IEntity> {
-        let entity = Entity {
-            inner: client.get_entity(entity_id)?,
-            client
-        };
-
-        Ok(Box::new(entity))
-    }
-}
-
-impl EntityTrait for Entity {
-    fn entity_id(&self) -> &str {
-        &self.inner.entity_id
-    }
-
-    fn entity_type(&self) -> &str {
-        &self.inner.entity_type
-    }
-
-    fn entity_name(&self) -> &str {
-        &self.inner.entity_name
-    }
-
-    fn field(&self, field_name: &str) -> IField {
-        Field::new(&*self.client, self.inner.entity_id.clone(), field_name)
-    }
-}
 
 pub trait SlotTrait<T> {
     fn call(&mut self, args: T);
@@ -373,39 +287,20 @@ impl<F> Slot<F>
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SlotToken(usize);
+
 pub trait SignalTrait<F: FnMut(&T), T>
 {
-    fn connect(&mut self, slot: Slot<F>) -> SignalSlotConnection<F, T>;
-    fn disconnect(&mut self, id: usize);
+    fn connect(&mut self, slot: Slot<F>) -> SlotToken;
+    fn disconnect(&mut self, token: &SlotToken);
     fn emit(&mut self, args: &T);
-}
-
-struct SignalInternal<F: FnMut(&T), T>
-{
-    slots: HashMap<usize, Slot<F>>,
-    args: std::marker::PhantomData<T>,
 }
 
 pub struct Signal<F: FnMut(&T), T>
 {
-    internal: Rc<RefCell<SignalInternal<F, T>>>
-}
-
-pub struct SignalSlotConnection<F: FnMut(&T), T>
-{
-    id: usize,
-    signal: std::rc::Weak<RefCell<SignalInternal<F, T>>>
-}
-
-impl<F: FnMut(&T), T> SignalSlotConnection<F, T>
-{
-    pub fn disconnect(&mut self)
-    {
-        if let Some(signal) = self.signal.upgrade()
-        {
-            signal.borrow_mut().slots.remove(&self.id);
-        }
-    }
+    slots: HashMap<SlotToken, Slot<F>>,
+    args: std::marker::PhantomData<T>,
 }
 
 impl<F: FnMut(&T), T> Signal<F, T>
@@ -413,35 +308,37 @@ impl<F: FnMut(&T), T> Signal<F, T>
     pub fn new() -> Self
     {
         Signal {
-            internal: Rc::new(RefCell::new(SignalInternal { slots: HashMap::new(), args: std::marker::PhantomData }))
+           slots: HashMap::new(),
+           args: std::marker::PhantomData,
         }
     }
 }
 
 impl<F: FnMut(&T), T> SignalTrait<F, T> for Signal<F, T>
 {
-    fn connect(&mut self, slot: Slot<F>) -> SignalSlotConnection<F, T>
+    fn connect(&mut self, slot: Slot<F>) -> SlotToken
     {
         static COUNTER : AtomicUsize = AtomicUsize::new(0);
-        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-        self.internal.borrow_mut().slots.insert(id, slot);
-        SignalSlotConnection { id, signal: Rc::downgrade(&self.internal) }
+        let id = SlotToken(COUNTER.fetch_add(1, Ordering::Relaxed));
+        self.slots.insert(id, slot);
+        id
     }
 
-    fn disconnect(&mut self, id: usize)
+    fn disconnect(&mut self, id: &SlotToken)
     {
-        self.internal.borrow_mut().slots.remove(&id);
+        self.slots.remove(id);
     }
 
     fn emit(&mut self, args: &T)
     {
-        for (_, slot) in self.internal.borrow_mut().slots.iter_mut()
+        for (_, slot) in self.slots.iter_mut()
         {
             slot.call(args);
         }
     }
 }
 
+#[derive(Debug, PartialEq, PartialOrd)]
 pub enum LogLevel
 {
     Trace,
@@ -453,58 +350,205 @@ pub enum LogLevel
 
 pub trait LoggerTrait
 {
-    fn log(&mut self, level: LogLevel, message: &str);
+    fn log(&mut self, level: &LogLevel, message: &str);
 
     fn trace(&mut self, message: &str)
     {
-        self.log(LogLevel::Trace, message);
+        self.log(&LogLevel::Trace, message);
     }
 
     fn debug(&mut self, message: &str)
     {
-        self.log(LogLevel::Debug, message);
+        self.log(&LogLevel::Debug, message);
     }
 
     fn info(&mut self, message: &str)
     {
-        self.log(LogLevel::Info, message);
+        self.log(&LogLevel::Info, message);
     }
 
     fn warning(&mut self, message: &str)
     {
-        self.log(LogLevel::Warning, message);
+        self.log(&LogLevel::Warning, message);
     }
 
     fn error(&mut self, message: &str)
     {
-        self.log(LogLevel::Error, message);
+        self.log(&LogLevel::Error, message);
+    }
+}
+
+pub type LoggerRef = Rc<RefCell<dyn LoggerTrait>>;
+pub struct Logger(LoggerRef);
+
+impl Logger
+{
+    pub fn clone(&self) -> Self
+    {
+        Logger(self.0.clone())
+    }    
+}
+
+impl LoggerTrait for Logger
+{
+    fn log(&mut self, level: &LogLevel, message: &str)
+    {
+        self.0.borrow_mut().log(level, message);
+    }
+}
+
+pub struct PrintLogger
+{
+    level: LogLevel
+}
+
+impl PrintLogger
+{
+    pub fn new(level: LogLevel) -> Logger
+    {
+        Logger(Rc::new(RefCell::new(
+            PrintLogger { level }
+        )))
+    }
+}
+
+impl LoggerTrait for PrintLogger
+{
+    fn log(&mut self, level: &LogLevel, message: &str)
+    {
+        if *level >= self.level
+        {
+            println!("{} | {} | {}", Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true), match level {
+                LogLevel::Trace => "TRACE",
+                LogLevel::Debug => "DEBUG",
+                LogLevel::Info => "INFO",
+                LogLevel::Warning => "WARNING",
+                LogLevel::Error => "ERROR"
+            }, message);
+        }
+    }
+}
+
+pub struct DefaultLogger
+{
+    loggers: Vec<Logger>
+}
+
+impl DefaultLogger
+{
+    pub fn new() -> Self
+    {
+        DefaultLogger { loggers: vec![] }
+    }
+
+    pub fn add_logger(&mut self, logger: Logger)
+    {
+        self.loggers.push(logger);
+    }
+}
+
+impl LoggerTrait for DefaultLogger
+{
+    fn log(&mut self, level: &LogLevel, message: &str)
+    {
+        for logger in &mut self.loggers
+        {
+            logger.log(level, message);
+        }
     }
 }
 
 pub trait ApplicationTrait
 {
     fn execute(&mut self);
-    fn quit(&mut self);
 }
 
-pub trait WorkTrait
+pub struct ApplicationContext
 {
-    fn intialize(&mut self) -> Result<()>;
-    fn do_work(&mut self) -> Result<()>;
-    fn deinitialize(&mut self) -> Result<()>;
+    logger: Logger,
+    quit: bool
+}
+
+pub trait WorkerTrait
+{
+    fn intialize(&mut self, ctx: &mut ApplicationContext) -> Result<()>;
+    fn do_work(&mut self, ctx: &mut ApplicationContext) -> Result<()>;
+    fn deinitialize(&mut self, ctx: &mut ApplicationContext) -> Result<()>;
 }
 
 pub struct Application
 {
-    workers: Vec<IWorker>,
-    running: bool
+    workers: Vec<Box<dyn WorkerTrait>>,
+    loop_interval_ms: u64,
+    logger: Logger
 }
 
 impl Application
 {
-    pub fn new() -> Self
+    pub fn new(loop_interval_ms: u64, logger: Logger) -> Self
     {
-        Application { workers: vec![], running: false }
+        Application {
+            workers: vec![],
+            loop_interval_ms,
+            logger
+        }
+    }
+}
+
+impl WorkerTrait for Application {
+    fn intialize(&mut self, ctx: &mut ApplicationContext) -> Result<()>
+    {
+        ctx.quit = false;
+
+        for worker in &mut self.workers
+        {
+            match worker.intialize(ctx) {
+                Ok(_) => {},
+                Err(e) => {
+                    ctx.logger.error(&format!("[qdb::Application::initialize] Error while initializing worker: {}", e));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn do_work(&mut self, ctx: &mut ApplicationContext) -> Result<()>
+    {
+        while !ctx.quit
+        {
+            let start = Instant::now();
+
+            for worker in &mut self.workers
+            {
+                match worker.do_work(ctx) {
+                    Ok(_) => {},
+                    Err(e) => {
+                        ctx.logger.error(&format!("[qdb::Application::do_work] Error while executing worker: {}", e));
+                    }
+                }
+            }
+
+            let sleep_time = std::time::Duration::from_millis(self.loop_interval_ms) - start.elapsed();
+            std::thread::sleep(sleep_time);
+        }
+
+        Ok(())
+    }
+
+    fn deinitialize(&mut self, ctx: &mut ApplicationContext) -> Result<()>
+    {
+        for worker in &mut self.workers
+        {
+            match worker.deinitialize(ctx) {
+                Ok(_) => {},
+                Err(e) => {
+                    ctx.logger.error(&format!("[qdb::Application::deinitialize] Error while deinitializing worker: {}", e));
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -512,51 +556,20 @@ impl ApplicationTrait for Application
 {
     fn execute(&mut self)
     {
-        self.running = true;
+        let mut ctx = ApplicationContext {
+            logger: self.logger.clone(),
+            quit: false
+        };
 
-        for worker in &mut self.workers
-        {
-            match worker.intialize() {
-                Ok(_) => {},
-                Err(e) => {
-                    println!("Error: {}", e);
-                }
-            }
-        }
-
-        while self.running
-        {
-            for worker in &mut self.workers
-            {
-                match worker.do_work() {
-                    Ok(_) => {},
-                    Err(e) => {
-                        println!("Error: {}", e);
-                    }
-                }
-            }
-        }
-
-        for worker in &mut self.workers
-        {
-            match worker.deinitialize() {
-                Ok(_) => {},
-                Err(e) => {
-                    println!("Error: {}", e);
-                }
-            }
-        }
-    }
-
-    fn quit(&mut self)
-    {
-        self.running = false;
+        self.intialize(&mut ctx).unwrap_or_default();
+        self.do_work(&mut ctx).unwrap_or_default();
+        self.deinitialize(&mut ctx).unwrap_or_default();
     }
 }
 
 impl Application
 {
-    pub fn add_worker(&mut self, worker: IWorker)
+    pub fn add_worker(&mut self, worker: Box<dyn WorkerTrait>)
     {
         self.workers.push(worker);
     }

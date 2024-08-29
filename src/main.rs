@@ -5,14 +5,14 @@ mod qdb;
 
 fn main() {
     let mut signal = qdb::Signal::new();
-    let mut token = signal.connect(qdb::Slot::new(|args: &(String, i16)| {
+    let token = signal.connect(qdb::Slot::new(|args: &(String, i16)| {
         println!("Signal emitted: {}", args.1);
     }));
     
     signal.emit(&("Hello".to_string(), 42));
     signal.emit(&("Hello".to_string(), 43));
 
-    token.disconnect();
+    signal.disconnect(&token);
 
     signal.emit(&("Hello".to_string(), 44));
 
