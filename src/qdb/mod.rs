@@ -1,10 +1,7 @@
 pub type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
 
 use chrono::{DateTime, Utc};
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::ops::Deref;
-use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
@@ -125,85 +122,6 @@ pub trait ValueTrait {
     fn update_timestamp(&mut self, value: DateTime<Utc>) -> Result<()>;
     fn update_connection_state(&mut self, value: String) -> Result<()>;
     fn update_garage_door_state(&mut self, value: String) -> Result<()>;
-}
-
-type ValueRef = Rc<RefCell<DatabaseValue>>;
-pub struct Value(ValueRef);
-
-impl Value {
-    pub fn new(value: DatabaseValue) -> Self {
-        Value(Rc::new(RefCell::new(value)))
-    }
-
-    pub fn clone(&self) -> Self {
-        Value(self.0.clone())
-    }
-}
-
-impl ValueTrait for Value {
-    fn as_str(&self) -> Result<String> {
-        self.0.borrow().as_str()
-    }
-
-    fn as_i64(&self) -> Result<i64> {
-        self.0.borrow().as_i64()
-    }
-
-    fn as_f64(&self) -> Result<f64> {
-        self.0.borrow().as_f64()
-    }
-
-    fn as_bool(&self) -> Result<bool> {
-        self.0.borrow().as_bool()
-    }
-
-    fn as_entity_reference(&self) -> Result<String> {
-        self.0.borrow().as_entity_reference()
-    }
-
-    fn as_timestamp(&self) -> Result<DateTime<Utc>> {
-        self.0.borrow().as_timestamp()
-    }
-
-    fn as_connection_state(&self) -> Result<String> {
-        self.0.borrow().as_connection_state()
-    }
-
-    fn as_garage_door_state(&self) -> Result<String> {
-        self.0.borrow().as_garage_door_state()
-    }
-
-    fn update_str(&mut self, value: String) -> Result<()> {
-        self.0.borrow_mut().update_str(value)
-    }
-
-    fn update_i64(&mut self, value: i64) -> Result<()> {
-        self.0.borrow_mut().update_i64(value)
-    }
-
-    fn update_f64(&mut self, value: f64) -> Result<()> {
-        self.0.borrow_mut().update_f64(value)
-    }
-
-    fn update_bool(&mut self, value: bool) -> Result<()> {
-        self.0.borrow_mut().update_bool(value)
-    }
-
-    fn update_entity_reference(&mut self, value: String) -> Result<()> {
-        self.0.borrow_mut().update_entity_reference(value)
-    }
-
-    fn update_timestamp(&mut self, value: DateTime<Utc>) -> Result<()> {
-        self.0.borrow_mut().update_timestamp(value)
-    }
-
-    fn update_connection_state(&mut self, value: String) -> Result<()> {
-        self.0.borrow_mut().update_connection_state(value)
-    }
-
-    fn update_garage_door_state(&mut self, value: String) -> Result<()> {
-        self.0.borrow_mut().update_garage_door_state(value)
-    }
 }
 
 impl ValueTrait for DatabaseValue {
@@ -357,84 +275,13 @@ impl ValueTrait for DatabaseValue {
 }
 
 pub trait ClientTrait {
-    fn get_entity(&mut self, entity_id: &str) -> Result<DatabaseEntity>;
-    fn get_entities(&mut self, entity_type: &str) -> Result<Vec<DatabaseEntity>>;
-    fn read(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()>;
-    fn write(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()>;
-    fn register_notification(&mut self, config: NotificationConfig) -> Result<NotificationToken>;
-    fn unregister_notification(&mut self, token: NotificationToken) -> Result<()>;
-    fn process_notifications(&mut self) -> Result<Vec<DatabaseNotification>>;
-}
-
-type ClientRef = Rc<RefCell<dyn ClientTrait>>;
-pub struct Client(ClientRef);
-
-impl Client {
-    pub fn clone(&self) -> Self {
-        Client(self.0.clone())
-    }
-}
-
-impl ClientTrait for Client {
-    fn get_entity(&mut self, entity_id: &str) -> Result<DatabaseEntity> {
-        self.0.borrow_mut().get_entity(entity_id)
-    }
-
-    fn get_entities(&mut self, entity_type: &str) -> Result<Vec<DatabaseEntity>> {
-        self.0.borrow_mut().get_entities(entity_type)
-    }
-
-    fn read(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()> {
-        self.0.borrow_mut().read(requests)
-    }
-
-    fn write(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()> {
-        self.0.borrow_mut().write(requests)
-    }
-
-    fn register_notification(&mut self, config: NotificationConfig) -> Result<NotificationToken> {
-        self.0.borrow_mut().register_notification(config)
-    }
-
-    fn unregister_notification(&mut self, token: NotificationToken) -> Result<()> {
-        self.0.borrow_mut().unregister_notification(token)
-    }
-
-    fn process_notifications(&mut self) -> Result<Vec<DatabaseNotification>> {
-        self.0.borrow_mut().process_notifications()
-    }
-}
-
-pub enum NotificationAction {
-    Change,
-    Write,
-}
-
-pub trait FieldTrait {
-    fn name(&self) -> &str;
-    fn write_time(&self) -> &DateTime<Utc>;
-    fn writer_id(&self) -> &str;
-    fn value(&self) -> Value;
-    fn on(
-        &mut self,
-        action: NotificationAction,
-        callback: Slot<DatabaseNotification>,
-        context: Vec<&str>,
-    ) -> Result<()>;
-}
-
-type FieldRef = Rc<RefCell<dyn FieldTrait>>;
-pub struct _Field {
-    field: DatabaseField,
-    client: Client,
-}
-pub struct Field(FieldRef);
-
-pub trait EntityTrait {
-    fn entity_id(&self) -> &str;
-    fn entity_type(&self) -> &str;
-    fn entity_name(&self) -> &str;
-    fn field(&self, name: &str) -> Option<&DatabaseValue>;
+    fn get_entity(self, entity_id: &str) -> Result<DatabaseEntity>;
+    fn get_entities(self, entity_type: &str) -> Result<Vec<DatabaseEntity>>;
+    fn read(self, requests: &mut Vec<DatabaseField>) -> Result<()>;
+    fn write(self, requests: &mut Vec<DatabaseField>) -> Result<()>;
+    fn register_notification(self, config: NotificationConfig) -> Result<NotificationToken>;
+    fn unregister_notification(self, token: NotificationToken) -> Result<()>;
+    fn process_notifications(self) -> Result<Vec<DatabaseNotification>>;
 }
 
 pub struct NotificationManager {
@@ -516,41 +363,26 @@ pub enum LogLevel {
 }
 
 pub trait LoggerTrait {
-    fn log(&mut self, level: &LogLevel, message: &str);
+    fn log(&self, level: &LogLevel, message: &str);
 
-    fn trace(&mut self, message: &str) {
+    fn trace(&self, message: &str) {
         self.log(&LogLevel::Trace, message);
     }
 
-    fn debug(&mut self, message: &str) {
+    fn debug(&self, message: &str) {
         self.log(&LogLevel::Debug, message);
     }
 
-    fn info(&mut self, message: &str) {
+    fn info(&self, message: &str) {
         self.log(&LogLevel::Info, message);
     }
 
-    fn warning(&mut self, message: &str) {
+    fn warning(&self, message: &str) {
         self.log(&LogLevel::Warning, message);
     }
 
-    fn error(&mut self, message: &str) {
+    fn error(&self, message: &str) {
         self.log(&LogLevel::Error, message);
-    }
-}
-
-pub type LoggerRef = Rc<RefCell<dyn LoggerTrait>>;
-pub struct Logger(LoggerRef);
-
-impl Logger {
-    pub fn clone(&self) -> Self {
-        Logger(self.0.clone())
-    }
-}
-
-impl LoggerTrait for Logger {
-    fn log(&mut self, level: &LogLevel, message: &str) {
-        self.0.borrow_mut().log(level, message);
     }
 }
 
@@ -558,14 +390,8 @@ pub struct PrintLogger {
     level: LogLevel,
 }
 
-impl PrintLogger {
-    pub fn new(level: LogLevel) -> Logger {
-        Logger(Rc::new(RefCell::new(PrintLogger { level })))
-    }
-}
-
 impl LoggerTrait for PrintLogger {
-    fn log(&mut self, level: &LogLevel, message: &str) {
+    fn log(&self, level: &LogLevel, message: &str) {
         if *level >= self.level {
             println!(
                 "{} | {} | {}",
@@ -583,64 +409,63 @@ impl LoggerTrait for PrintLogger {
     }
 }
 
-pub struct DefaultLogger {
-    loggers: Vec<Logger>,
-}
+// pub struct DefaultLogger {
+//     loggers: Vec<Logger>,
+// }
 
-impl DefaultLogger {
-    pub fn new() -> Self {
-        DefaultLogger { loggers: vec![] }
-    }
+// impl DefaultLogger {
+//     pub fn new() -> Self {
+//         DefaultLogger { loggers: vec![] }
+//     }
 
-    pub fn add_logger(&mut self, logger: Logger) {
-        self.loggers.push(logger);
-    }
-}
+//     pub fn add_logger(&mut self, logger: Logger) {
+//         self.loggers.push(logger);
+//     }
+// }
 
-impl LoggerTrait for DefaultLogger {
-    fn log(&mut self, level: &LogLevel, message: &str) {
-        for logger in &mut self.loggers {
-            logger.log(level, message);
-        }
-    }
-}
+// impl LoggerTrait for DefaultLogger {
+//     fn log(&self, level: &LogLevel, message: &str) {
+//         for logger in &mut self.loggers {
+//             logger.log(level, message);
+//         }
+//     }
+// }
 
 pub trait ApplicationTrait {
-    fn execute(&mut self);
+    fn execute(&self, ctx: &mut ApplicationContext);
 }
 
 pub struct ApplicationContext {
-    logger: Logger,
+    client: Box<dyn ClientTrait>,
+    logger: Box<dyn LoggerTrait>,
     quit: bool,
 }
 
 pub trait WorkerTrait {
-    fn intialize(&mut self, ctx: &mut ApplicationContext) -> Result<()>;
-    fn do_work(&mut self, ctx: &mut ApplicationContext) -> Result<()>;
-    fn deinitialize(&mut self, ctx: &mut ApplicationContext) -> Result<()>;
+    fn intialize(&self, ctx: &mut ApplicationContext) -> Result<()>;
+    fn do_work(&self, ctx: &mut ApplicationContext) -> Result<()>;
+    fn deinitialize(&self, ctx: &mut ApplicationContext) -> Result<()>;
 }
 
 pub struct Application {
     workers: Vec<Box<dyn WorkerTrait>>,
-    loop_interval_ms: u64,
-    logger: Logger,
+    loop_interval_ms: u64
 }
 
 impl Application {
-    pub fn new(loop_interval_ms: u64, logger: Logger) -> Self {
+    pub fn new(loop_interval_ms: u64) -> Self {
         Application {
             workers: vec![],
-            loop_interval_ms,
-            logger,
+            loop_interval_ms
         }
     }
 }
 
 impl WorkerTrait for Application {
-    fn intialize(&mut self, ctx: &mut ApplicationContext) -> Result<()> {
+    fn intialize(&self, ctx: &mut ApplicationContext) -> Result<()> {
         ctx.quit = false;
 
-        for worker in &mut self.workers {
+        for worker in &self.workers {
             match worker.intialize(ctx) {
                 Ok(_) => {}
                 Err(e) => {
@@ -655,11 +480,11 @@ impl WorkerTrait for Application {
         Ok(())
     }
 
-    fn do_work(&mut self, ctx: &mut ApplicationContext) -> Result<()> {
+    fn do_work(&self, ctx: &mut ApplicationContext) -> Result<()> {
         while !ctx.quit {
             let start = Instant::now();
 
-            for worker in &mut self.workers {
+            for worker in &self.workers {
                 match worker.do_work(ctx) {
                     Ok(_) => {}
                     Err(e) => {
@@ -679,8 +504,8 @@ impl WorkerTrait for Application {
         Ok(())
     }
 
-    fn deinitialize(&mut self, ctx: &mut ApplicationContext) -> Result<()> {
-        for worker in &mut self.workers {
+    fn deinitialize(&self, ctx: &mut ApplicationContext) -> Result<()> {
+        for worker in &self.workers {
             match worker.deinitialize(ctx) {
                 Ok(_) => {}
                 Err(e) => {
@@ -697,15 +522,10 @@ impl WorkerTrait for Application {
 }
 
 impl ApplicationTrait for Application {
-    fn execute(&mut self) {
-        let mut ctx = ApplicationContext {
-            logger: self.logger.clone(),
-            quit: false,
-        };
-
-        self.intialize(&mut ctx).unwrap_or_default();
-        self.do_work(&mut ctx).unwrap_or_default();
-        self.deinitialize(&mut ctx).unwrap_or_default();
+    fn execute(&self, ctx: &mut ApplicationContext) {
+        self.intialize(ctx).unwrap_or_default();
+        self.do_work(ctx).unwrap_or_default();
+        self.deinitialize(ctx).unwrap_or_default();
     }
 }
 
