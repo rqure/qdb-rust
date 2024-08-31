@@ -8,9 +8,6 @@ use super::NotificationConfig;
 use super::NotificationToken;
 use super::Result;
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use ureq::serde_json::Map;
 use ureq::serde_json::Number;
 use ureq::serde_json::Value;
@@ -528,7 +525,7 @@ impl ClientTrait for Client {
         Ok(())
     }
 
-    fn register_notification(&mut self, config: NotificationConfig) -> Result<NotificationToken> {
+    fn register_notification(&mut self, config: &NotificationConfig) -> Result<NotificationToken> {
         let context = config
             .context
             .iter()
@@ -536,9 +533,9 @@ impl ClientTrait for Client {
             .collect();
 
         let mut notification = Map::new();
-        notification.insert("id".to_string(), Value::String(config.entity_id));
-        notification.insert("type".to_string(), Value::String(config.entity_type));
-        notification.insert("field".to_string(), Value::String(config.field));
+        notification.insert("id".to_string(), Value::String(config.entity_id.clone()));
+        notification.insert("type".to_string(), Value::String(config.entity_type.clone()));
+        notification.insert("field".to_string(), Value::String(config.field.clone()));
         notification.insert(
             "notifyOnChange".to_string(),
             Value::Bool(config.notify_on_change),
@@ -577,7 +574,7 @@ impl ClientTrait for Client {
         Ok(NotificationToken(token.to_string()))
     }
 
-    fn unregister_notification(&mut self, token: NotificationToken) -> Result<()> {
+    fn unregister_notification(&mut self, token: &NotificationToken) -> Result<()> {
         let mut request = Map::new();
         request.insert(
             "@type".to_string(),
@@ -595,7 +592,7 @@ impl ClientTrait for Client {
         Ok(())
     }
 
-    fn process_notifications(&mut self) -> Result<Vec<DatabaseNotification>> {
+    fn get_notifications(&mut self) -> Result<Vec<DatabaseNotification>> {
         let mut request = Map::new();
         request.insert(
             "@type".to_string(),

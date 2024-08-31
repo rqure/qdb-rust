@@ -2,6 +2,7 @@ pub type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
 
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
@@ -9,11 +10,16 @@ use std::time::Instant;
 pub enum Error {
     ClientError(String),
     DatabaseFieldError(String),
+    NotificationError(String),
 }
 
 impl Error {
     pub fn from_client(msg: &str) -> Box<Self> {
         Box::new(Error::ClientError(msg.to_string()))
+    }
+
+    pub fn from_notification(msg: &str) -> Box<Self> {
+        Box::new(Error::NotificationError(msg.to_string()))
     }
 
     pub fn from_database_field(msg: &str) -> Box<Self> {
@@ -26,6 +32,7 @@ impl std::fmt::Display for Error {
         match self {
             Error::ClientError(msg) => write!(f, "Client error: {}", msg),
             Error::DatabaseFieldError(msg) => write!(f, "Database error: {}", msg),
+            Error::NotificationError(msg) => write!(f, "Notification error: {}", msg),
         }
     }
 }
@@ -35,6 +42,7 @@ impl std::error::Error for Error {
         match self {
             Error::ClientError(_) => None,
             Error::DatabaseFieldError(_) => None,
+            Error::NotificationError(_) => None,
         }
     }
 }
@@ -75,7 +83,7 @@ pub struct DatabaseNotification {
     pub context: Vec<DatabaseField>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct NotificationConfig {
     pub entity_id: String,
     pub entity_type: String,
@@ -84,11 +92,97 @@ pub struct NotificationConfig {
     pub context: Vec<String>,
 }
 
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct NotificationToken(String);
 
-impl Into<String> for NotificationToken {
+impl Into<String> for &NotificationToken {
     fn into(self) -> String {
-        self.0
+        self.0.clone()
+    }
+}
+
+impl From<String> for NotificationToken {
+    fn from(s: String) -> Self {
+        NotificationToken(s)
+    }
+}
+
+impl From<&str> for NotificationToken {
+    fn from(s: &str) -> Self {
+        NotificationToken(s.to_string())
+    }
+}
+
+pub struct NotificationManager {
+    registered_config: HashSet<NotificationConfig>,
+    config_to_token: HashMap<NotificationConfig, NotificationToken>,
+    token_to_callback_list: HashMap<NotificationToken, Vec<fn(&DatabaseNotification)>>
+}
+
+impl NotificationManager {
+    pub fn new() -> Self {
+        NotificationManager {
+            registered_config: HashSet::new(),
+            config_to_token: HashMap::new(),
+            token_to_callback_list: HashMap::new()
+        }
+    }
+
+    pub fn reregister(&mut self, client: &mut dyn ClientTrait) -> Result<()> {
+        for config in &self.registered_config {            
+            client.register_notification(config)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn register(&mut self, client: &mut dyn ClientTrait, config: &NotificationConfig, callback: fn(&DatabaseNotification)) -> Result<NotificationToken> {
+        if self.registered_config.contains(&config) {
+            let token = self.config_to_token.get(config)
+                .ok_or(Error::from_notification("Inconsistent notification state during registration"))?;
+            
+            self.token_to_callback_list.get_mut(token)
+                .ok_or(Error::from_notification("Inconsistent notification state during registration"))?
+                .push(callback);
+
+            return Ok(token.clone());
+        }
+
+        let token = client.register_notification(config)?;
+        
+        self.registered_config.insert(config.clone());
+        self.config_to_token.insert(config.clone(), token.clone());
+        self.token_to_callback_list.insert(token.clone(), vec![callback]);
+
+        Ok(token)
+    }
+
+    pub fn unregister(&mut self, client: &mut dyn ClientTrait, token: &NotificationToken) -> Result<()> {
+        if !self.token_to_callback_list.contains_key(token) {
+            return Err(Error::from_notification("Token not found during unregistration"));
+        }
+
+        client.unregister_notification(token)?;
+
+        self.token_to_callback_list.remove(token);
+        self.config_to_token.retain(|_, v| v != token);
+        self.registered_config.retain(|c| self.config_to_token.contains_key(c));
+        
+        Ok(())
+    }
+
+    pub fn process_notifications(&mut self, client: &mut dyn ClientTrait) -> Result<()> {
+        let notifications = client.get_notifications()?;
+
+        for notification in &notifications {
+            let token = NotificationToken(notification.token.clone());
+            self.token_to_callback_list.get(&token)
+                .unwrap_or(&vec![])
+                .iter()
+                .for_each(|callback| callback(&notification));
+        }
+
+        Ok(())
     }
 }
 
@@ -279,13 +373,9 @@ pub trait ClientTrait {
     fn get_entities(&mut self, entity_type: &str) -> Result<Vec<DatabaseEntity>>;
     fn read(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()>;
     fn write(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()>;
-    fn register_notification(&mut self, config: NotificationConfig) -> Result<NotificationToken>;
-    fn unregister_notification(&mut self, token: NotificationToken) -> Result<()>;
-    fn process_notifications(&mut self) -> Result<Vec<DatabaseNotification>>;
-}
-
-pub struct NotificationManager {
-    notifications: HashMap<NotificationToken, NotificationConfig>,
+    fn register_notification(&mut self, config: &NotificationConfig) -> Result<NotificationToken>;
+    fn unregister_notification(&mut self, token: &NotificationToken) -> Result<()>;
+    fn get_notifications(&mut self) -> Result<Vec<DatabaseNotification>>;
 }
 
 pub mod rest;
