@@ -275,13 +275,13 @@ impl ValueTrait for DatabaseValue {
 }
 
 pub trait ClientTrait {
-    fn get_entity(self, entity_id: &str) -> Result<DatabaseEntity>;
-    fn get_entities(self, entity_type: &str) -> Result<Vec<DatabaseEntity>>;
-    fn read(self, requests: &mut Vec<DatabaseField>) -> Result<()>;
-    fn write(self, requests: &mut Vec<DatabaseField>) -> Result<()>;
-    fn register_notification(self, config: NotificationConfig) -> Result<NotificationToken>;
-    fn unregister_notification(self, token: NotificationToken) -> Result<()>;
-    fn process_notifications(self) -> Result<Vec<DatabaseNotification>>;
+    fn get_entity(&mut self, entity_id: &str) -> Result<DatabaseEntity>;
+    fn get_entities(&mut self, entity_type: &str) -> Result<Vec<DatabaseEntity>>;
+    fn read(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()>;
+    fn write(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()>;
+    fn register_notification(&mut self, config: NotificationConfig) -> Result<NotificationToken>;
+    fn unregister_notification(&mut self, token: NotificationToken) -> Result<()>;
+    fn process_notifications(&mut self) -> Result<Vec<DatabaseNotification>>;
 }
 
 pub struct NotificationManager {
@@ -523,9 +523,9 @@ impl WorkerTrait for Application {
 
 impl ApplicationTrait for Application {
     fn execute(&self, ctx: &mut ApplicationContext) {
-        self.intialize(ctx).unwrap_or_default();
-        self.do_work(ctx).unwrap_or_default();
-        self.deinitialize(ctx).unwrap_or_default();
+        self.intialize(ctx).unwrap();
+        self.do_work(ctx).unwrap();
+        self.deinitialize(ctx).unwrap();
     }
 }
 

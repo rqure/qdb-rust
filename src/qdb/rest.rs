@@ -23,11 +23,11 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(url: &str) -> super::Client {
-        super::Client(Rc::new(RefCell::new(Client {
+    pub fn new(url: &str) -> Self {
+        Client {
             url: url.to_string(),
             request_template: Map::new(),
-        })))
+        }
     }
 
     fn authenticate(&mut self) -> Result<()> {
@@ -48,7 +48,7 @@ impl Client {
         }
     }
 
-    fn has_authenticated(&self, js: &Value) -> bool {
+    fn has_authenticated(&mut self, js: &Value) -> bool {
         js.as_object()
             .and_then(|o| o.get("header"))
             .and_then(|v| v.as_object())
@@ -188,7 +188,7 @@ impl Client {
 }
 
 impl ClientTrait for Client {
-    fn get_entity(&self, entity_id: &str) -> Result<DatabaseEntity> {
+    fn get_entity(&mut self, entity_id: &str) -> Result<DatabaseEntity> {
         let mut request = Map::new();
         request.insert(
             "@type".to_string(),
@@ -230,7 +230,7 @@ impl ClientTrait for Client {
         })
     }
 
-    fn get_entities(&self, entity_type: &str) -> Result<Vec<DatabaseEntity>> {
+    fn get_entities(&mut self, entity_type: &str) -> Result<Vec<DatabaseEntity>> {
         let mut request = Map::new();
         request.insert(
             "@type".to_string(),
@@ -287,7 +287,7 @@ impl ClientTrait for Client {
         Ok(result)
     }
 
-    fn read(&self, requests: &mut Vec<DatabaseField>) -> Result<()> {
+    fn read(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()> {
         let mut request = Map::new();
         request.insert(
             "@type".to_string(),
