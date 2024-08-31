@@ -113,6 +113,13 @@ impl From<&str> for NotificationToken {
     }
 }
 
+pub trait NotificationManagerTrait {
+    fn reregister(&mut self, client: &mut dyn ClientTrait) -> Result<()>;
+    fn register(&mut self, client: &mut dyn ClientTrait, config: &NotificationConfig, callback: fn(&DatabaseNotification)) -> Result<NotificationToken>;
+    fn unregister(&mut self, client: &mut dyn ClientTrait, token: &NotificationToken) -> Result<()>;
+    fn process_notifications(&mut self, client: &mut dyn ClientTrait) -> Result<()>;
+}
+
 pub struct NotificationManager {
     registered_config: HashSet<NotificationConfig>,
     config_to_token: HashMap<NotificationConfig, NotificationToken>,
@@ -127,8 +134,10 @@ impl NotificationManager {
             token_to_callback_list: HashMap::new()
         }
     }
+}
 
-    pub fn reregister(&mut self, client: &mut dyn ClientTrait) -> Result<()> {
+impl NotificationManagerTrait for NotificationManager {
+    fn reregister(&mut self, client: &mut dyn ClientTrait) -> Result<()> {
         for config in &self.registered_config {            
             client.register_notification(config)?;
         }
@@ -136,7 +145,7 @@ impl NotificationManager {
         Ok(())
     }
 
-    pub fn register(&mut self, client: &mut dyn ClientTrait, config: &NotificationConfig, callback: fn(&DatabaseNotification)) -> Result<NotificationToken> {
+    fn register(&mut self, client: &mut dyn ClientTrait, config: &NotificationConfig, callback: fn(&DatabaseNotification)) -> Result<NotificationToken> {
         if self.registered_config.contains(&config) {
             let token = self.config_to_token.get(config)
                 .ok_or(Error::from_notification("Inconsistent notification state during registration"))?;
@@ -157,7 +166,7 @@ impl NotificationManager {
         Ok(token)
     }
 
-    pub fn unregister(&mut self, client: &mut dyn ClientTrait, token: &NotificationToken) -> Result<()> {
+    fn unregister(&mut self, client: &mut dyn ClientTrait, token: &NotificationToken) -> Result<()> {
         if !self.token_to_callback_list.contains_key(token) {
             return Err(Error::from_notification("Token not found during unregistration"));
         }
@@ -171,7 +180,7 @@ impl NotificationManager {
         Ok(())
     }
 
-    pub fn process_notifications(&mut self, client: &mut dyn ClientTrait) -> Result<()> {
+    fn process_notifications(&mut self, client: &mut dyn ClientTrait) -> Result<()> {
         let notifications = client.get_notifications()?;
 
         for notification in &notifications {
@@ -528,6 +537,7 @@ pub trait ApplicationTrait {
 pub struct ApplicationContext {
     client: Box<dyn ClientTrait>,
     logger: Box<dyn LoggerTrait>,
+    notification_manager: Box<dyn NotificationManagerTrait>,
     quit: bool,
 }
 
