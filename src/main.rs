@@ -1,38 +1,16 @@
 use chrono::Local;
-use qdb::{ClientTrait, SignalTrait};
+use qdb::ApplicationTrait;
 
 mod qdb;
 
 fn main() {
-    let mut signal = qdb::Signal::new();
-    let token = signal.connect(qdb::Slot::new(|args: &(String, i16)| {
-        println!("Signal emitted: {}", args.1);
-    }));
-    
-    signal.emit(&("Hello".to_string(), 42));
-    signal.emit(&("Hello".to_string(), 43));
+    let app = qdb::Application::new(500);
+    let mut ctx = qdb::ApplicationContext{
+        logger: Box::new(qdb::ConsoleLogger::new(qdb::LogLevel::Debug)),
+        client: Box::new(qdb::rest::Client::new("http://localhost:20000")),
+        notification_manager: Box::new(qdb::NotificationManager::new()),
+        quit: false,
+    };
 
-    signal.disconnect(&token);
-
-    signal.emit(&("Hello".to_string(), 44));
-
-    let mut client = qdb::rest::Client::new("http://localhost:20000");
-    match client.get_entities("Root") {
-        Ok(entities) => {
-            for entity in entities {
-                let mut fields = vec![
-                    qdb::DatabaseField::new(entity.entity_id, "SchemaUpdateTrigger")
-                ];
-
-                client.read(&mut fields).unwrap();
-
-                for field in &fields {
-                    println!("{}: {:?}: {}", field.name, field.value, field.write_time.with_timezone(&Local));
-                }
-            }
-        }
-        Err(e) => {
-            println!("Error: {}", e);
-        }
-    }
+    app.execute(&mut ctx);
 }

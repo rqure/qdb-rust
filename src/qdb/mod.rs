@@ -485,11 +485,19 @@ pub trait LoggerTrait {
     }
 }
 
-pub struct PrintLogger {
+pub struct ConsoleLogger {
     level: LogLevel,
 }
 
-impl LoggerTrait for PrintLogger {
+impl ConsoleLogger {
+    pub fn new(level: LogLevel) -> Self {
+        ConsoleLogger {
+            level: level,
+        }
+    }
+}
+
+impl LoggerTrait for ConsoleLogger {
     fn log(&self, level: &LogLevel, message: &str) {
         if *level >= self.level {
             println!(
@@ -535,10 +543,10 @@ pub trait ApplicationTrait {
 }
 
 pub struct ApplicationContext {
-    client: Box<dyn ClientTrait>,
-    logger: Box<dyn LoggerTrait>,
-    notification_manager: Box<dyn NotificationManagerTrait>,
-    quit: bool,
+    pub client: Box<dyn ClientTrait>,
+    pub logger: Box<dyn LoggerTrait>,
+    pub notification_manager: Box<dyn NotificationManagerTrait>,
+    pub quit: bool,
 }
 
 pub trait WorkerTrait {
@@ -565,6 +573,7 @@ impl WorkerTrait for Application {
     fn intialize(&self, ctx: &mut ApplicationContext) -> Result<()> {
         ctx.quit = false;
 
+        ctx.logger.log(&LogLevel::Info, "[qdb::Application::initialize] Initializing application");
         for worker in &self.workers {
             match worker.intialize(ctx) {
                 Ok(_) => {}
@@ -577,6 +586,7 @@ impl WorkerTrait for Application {
             }
         }
 
+        ctx.logger.log(&LogLevel::Info, "[qdb::Application::initialize] Initialization complete");
         Ok(())
     }
 
@@ -605,6 +615,8 @@ impl WorkerTrait for Application {
     }
 
     fn deinitialize(&self, ctx: &mut ApplicationContext) -> Result<()> {
+        ctx.logger.log(&LogLevel::Info, "[qdb::Application::deinitialize] Deinitializing application");
+
         for worker in &self.workers {
             match worker.deinitialize(ctx) {
                 Ok(_) => {}
@@ -617,6 +629,7 @@ impl WorkerTrait for Application {
             }
         }
 
+        ctx.logger.log(&LogLevel::Info, "[qdb::Application::deinitialize] Deinitialization complete");
         Ok(())
     }
 }
