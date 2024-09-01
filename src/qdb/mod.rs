@@ -706,3 +706,28 @@ impl Application {
         self.workers.push(worker);
     }
 }
+
+struct DatabaseWorker {
+    connected: bool,
+}
+
+impl WorkerTrait for DatabaseWorker {
+    fn intialize(&self, ctx: &mut ApplicationContext) -> Result<()> {
+        ctx.logger.log(&LogLevel::Info, "[qdb::DatabaseWorker::initialize] Initializing database worker");
+        Ok(())
+    }
+
+    fn do_work(&self, ctx: &mut ApplicationContext) -> Result<()> {
+        if ctx.database.connected() {
+            ctx.database.process_notifications()?;
+        }
+
+        ctx.database.process_notifications()?;
+        Ok(())
+    }
+
+    fn deinitialize(&self, ctx: &mut ApplicationContext) -> Result<()> {
+        ctx.logger.log(&LogLevel::Info, "[qdb::DatabaseWorker::deinitialize] Deinitializing database worker");
+        Ok(())
+    }
+}
