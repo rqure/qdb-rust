@@ -682,10 +682,13 @@ impl WorkerTrait for Application {
             }
 
             if !ctx.quit {
-                let sleep_time =
-                    std::time::Duration::from_millis(self.loop_interval_ms) - start.elapsed();
-
-                std::thread::sleep(sleep_time);
+                let loop_time = std::time::Duration::from_millis(self.loop_interval_ms);
+                let elapsed_time = start.elapsed();
+                
+                if loop_time > elapsed_time {
+                    let sleep_time = loop_time - start.elapsed();
+                    std::thread::sleep(sleep_time);
+                }
             }
 
             !ctx.quit
@@ -759,19 +762,19 @@ impl WorkerTrait for DatabaseWorker {
     fn do_work(&mut self, ctx: &mut ApplicationContext) -> Result<()> {
         if !ctx.database.connected() {
             if self.connected {
-                ctx.logger.log(&LogLevel::Error, "[qdb::DatabaseWorker::do_work] Disconnected from database");
+                ctx.logger.log(&LogLevel::Warning, "[qdb::DatabaseWorker::do_work] Disconnected from database");
                 self.connected = false;
                 self.signals.disconnected.emit(&());
             }
 
-            ctx.logger.log(&LogLevel::Info, "[qdb::DatabaseWorker::do_work] Attempting to connect to the database...");
+            ctx.logger.log(&LogLevel::Debug, "[qdb::DatabaseWorker::do_work] Attempting to connect to the database...");
             
             ctx.database.disconnect();
             ctx.database.connect()?;
 
             if ctx.database.connected() {
                 self.connected = true;
-                ctx.logger.log(&LogLevel::Error, "[qdb::DatabaseWorker::do_work] Connected to the database");
+                ctx.logger.log(&LogLevel::Info, "[qdb::DatabaseWorker::do_work] Connected to the database");
 
                 ctx.database.reregister_notifications()?;
                 self.signals.connected.emit(&());
