@@ -378,25 +378,30 @@ impl ValueTrait for DatabaseValue {
 }
 
 pub trait ClientTrait {
+    fn connect(&mut self) -> Result<()>;
     fn connected(&self) -> bool;
-    fn get_entity(&mut self, entity_id: &str) -> Result<DatabaseEntity>;
+    fn disconnect(&mut self) -> bool;
     fn get_entities(&mut self, entity_type: &str) -> Result<Vec<DatabaseEntity>>;
+    fn get_entity(&mut self, entity_id: &str) -> Result<DatabaseEntity>;
+    fn get_notifications(&mut self) -> Result<Vec<DatabaseNotification>>;
     fn read(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()>;
-    fn write(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()>;
     fn register_notification(&mut self, config: &NotificationConfig) -> Result<NotificationToken>;
     fn unregister_notification(&mut self, token: &NotificationToken) -> Result<()>;
-    fn get_notifications(&mut self) -> Result<Vec<DatabaseNotification>>;
+    fn write(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()>;
 }
 
 pub mod rest;
 
 pub trait DatabaseTrait {
+    fn connect(&mut self) -> Result<()>;
     fn connected(&self) -> bool;
+    fn disconnect(&mut self) -> bool;
     fn get_entity(&mut self, entity_id: &str) -> Result<DatabaseEntity>;
     fn get_entities(&mut self, entity_type: &str) -> Result<Vec<DatabaseEntity>>;
     fn read(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()>;
     fn write(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()>;
     fn register_notification(&mut self, config: &NotificationConfig, callback: fn(&DatabaseNotification)) -> Result<NotificationToken>;
+    fn reregister_notifications(&mut self) -> Result<()>;
     fn unregister_notification(&mut self, token: &NotificationToken) -> Result<()>;
     fn process_notifications(&mut self) -> Result<()>;
 }
@@ -416,8 +421,16 @@ impl Database {
 }
 
 impl DatabaseTrait for Database {
+    fn connect(&mut self) -> Result<()> {
+        return self.client.connect();
+    }
+
     fn connected(&self) -> bool {
         self.client.connected()
+    }
+
+    fn disconnect(&mut self) -> bool {
+        self.client.disconnect()
     }
 
     fn get_entity(&mut self, entity_id: &str) -> Result<DatabaseEntity> {
@@ -438,6 +451,10 @@ impl DatabaseTrait for Database {
 
     fn register_notification(&mut self, config: &NotificationConfig, callback: fn(&DatabaseNotification)) -> Result<NotificationToken> {
         self.notification_manager.register(&mut *self.client, config, callback)
+    }
+
+    fn reregister_notifications(&mut self) -> Result<()> {
+        self.notification_manager.reregister(&mut *self.client)
     }
 
     fn unregister_notification(&mut self, token: &NotificationToken) -> Result<()> {
@@ -599,7 +616,7 @@ impl LoggerTrait for ConsoleLogger {
 // }
 
 pub trait ApplicationTrait {
-    fn execute(&self, ctx: &mut ApplicationContext);
+    fn execute(&mut self, ctx: &mut ApplicationContext);
 }
 
 pub struct ApplicationContext {
@@ -609,9 +626,9 @@ pub struct ApplicationContext {
 }
 
 pub trait WorkerTrait {
-    fn intialize(&self, ctx: &mut ApplicationContext) -> Result<()>;
-    fn do_work(&self, ctx: &mut ApplicationContext) -> Result<()>;
-    fn deinitialize(&self, ctx: &mut ApplicationContext) -> Result<()>;
+    fn intialize(&mut self, ctx: &mut ApplicationContext) -> Result<()>;
+    fn do_work(&mut self, ctx: &mut ApplicationContext) -> Result<()>;
+    fn deinitialize(&mut self, ctx: &mut ApplicationContext) -> Result<()>;
 }
 
 pub struct Application {
@@ -629,11 +646,9 @@ impl Application {
 }
 
 impl WorkerTrait for Application {
-    fn intialize(&self, ctx: &mut ApplicationContext) -> Result<()> {
-        ctx.quit = false;
-
+    fn intialize(&mut self, ctx: &mut ApplicationContext) -> Result<()> {
         ctx.logger.log(&LogLevel::Info, "[qdb::Application::initialize] Initializing application");
-        for worker in &self.workers {
+        for worker in &mut self.workers {
             match worker.intialize(ctx) {
                 Ok(_) => {}
                 Err(e) => {
@@ -645,15 +660,16 @@ impl WorkerTrait for Application {
             }
         }
 
-        ctx.logger.log(&LogLevel::Info, "[qdb::Application::initialize] Initialization complete");
         Ok(())
     }
 
-    fn do_work(&self, ctx: &mut ApplicationContext) -> Result<()> {
-        while !ctx.quit {
+    fn do_work(&mut self, ctx: &mut ApplicationContext) -> Result<()> {
+        ctx.logger.log(&LogLevel::Info, "[qdb::Application::do_work] Application has started");
+
+        while {
             let start = Instant::now();
 
-            for worker in &self.workers {
+            for worker in &mut self.workers {
                 match worker.do_work(ctx) {
                     Ok(_) => {}
                     Err(e) => {
@@ -665,18 +681,23 @@ impl WorkerTrait for Application {
                 }
             }
 
-            let sleep_time =
-                std::time::Duration::from_millis(self.loop_interval_ms) - start.elapsed();
-            std::thread::sleep(sleep_time);
-        }
+            if !ctx.quit {
+                let sleep_time =
+                    std::time::Duration::from_millis(self.loop_interval_ms) - start.elapsed();
+
+                std::thread::sleep(sleep_time);
+            }
+
+            !ctx.quit
+        } {}
 
         Ok(())
     }
 
-    fn deinitialize(&self, ctx: &mut ApplicationContext) -> Result<()> {
+    fn deinitialize(&mut self, ctx: &mut ApplicationContext) -> Result<()> {
         ctx.logger.log(&LogLevel::Info, "[qdb::Application::deinitialize] Deinitializing application");
 
-        for worker in &self.workers {
+        for worker in &mut self.workers {
             match worker.deinitialize(ctx) {
                 Ok(_) => {}
                 Err(e) => {
@@ -688,13 +709,13 @@ impl WorkerTrait for Application {
             }
         }
 
-        ctx.logger.log(&LogLevel::Info, "[qdb::Application::deinitialize] Deinitialization complete");
+        ctx.logger.log(&LogLevel::Info, "[qdb::Application::deinitialize] Shutting down now");
         Ok(())
     }
 }
 
 impl ApplicationTrait for Application {
-    fn execute(&self, ctx: &mut ApplicationContext) {
+    fn execute(&mut self, ctx: &mut ApplicationContext) {
         self.intialize(ctx).unwrap();
         self.do_work(ctx).unwrap();
         self.deinitialize(ctx).unwrap();
@@ -707,26 +728,64 @@ impl Application {
     }
 }
 
-struct DatabaseWorker {
+pub struct DatabaseWorkerSignals {
+    pub connected: Signal<fn(&()), ()>,
+    pub disconnected: Signal<fn(&()), ()>,
+}
+
+pub struct DatabaseWorker {
     connected: bool,
+    pub signals: DatabaseWorkerSignals,
+}
+
+impl DatabaseWorker {
+    pub fn new() -> Self {
+        DatabaseWorker {
+            connected: false,
+            signals: DatabaseWorkerSignals {
+                connected: Signal::new(),
+                disconnected: Signal::new(),
+            },
+        }
+    }
 }
 
 impl WorkerTrait for DatabaseWorker {
-    fn intialize(&self, ctx: &mut ApplicationContext) -> Result<()> {
+    fn intialize(&mut self, ctx: &mut ApplicationContext) -> Result<()> {
         ctx.logger.log(&LogLevel::Info, "[qdb::DatabaseWorker::initialize] Initializing database worker");
         Ok(())
     }
 
-    fn do_work(&self, ctx: &mut ApplicationContext) -> Result<()> {
-        if ctx.database.connected() {
-            ctx.database.process_notifications()?;
+    fn do_work(&mut self, ctx: &mut ApplicationContext) -> Result<()> {
+        if !ctx.database.connected() {
+            if self.connected {
+                ctx.logger.log(&LogLevel::Error, "[qdb::DatabaseWorker::do_work] Disconnected from database");
+                self.connected = false;
+                self.signals.disconnected.emit(&());
+            }
+
+            ctx.logger.log(&LogLevel::Info, "[qdb::DatabaseWorker::do_work] Attempting to connect to the database...");
+            
+            ctx.database.disconnect();
+            ctx.database.connect()?;
+
+            if ctx.database.connected() {
+                self.connected = true;
+                ctx.logger.log(&LogLevel::Error, "[qdb::DatabaseWorker::do_work] Connected to the database");
+
+                ctx.database.reregister_notifications()?;
+                self.signals.connected.emit(&());
+            }
+
+            return Ok(())
         }
 
         ctx.database.process_notifications()?;
+
         Ok(())
     }
 
-    fn deinitialize(&self, ctx: &mut ApplicationContext) -> Result<()> {
+    fn deinitialize(&mut self, ctx: &mut ApplicationContext) -> Result<()> {
         ctx.logger.log(&LogLevel::Info, "[qdb::DatabaseWorker::deinitialize] Deinitializing database worker");
         Ok(())
     }

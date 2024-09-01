@@ -15,7 +15,8 @@ use ureq::serde_json::Value;
 use chrono::{prelude, DateTime, Utc};
 
 pub struct Client {
-    connected: bool,
+    auth_failure: bool,
+    endpoint_reachable: bool,
     request_template: Map<String, Value>,
     url: String,
 }
@@ -23,7 +24,8 @@ pub struct Client {
 impl Client {
     pub fn new(url: &str) -> Self {
         Client {
-            connected: false,
+            auth_failure: false,
+            endpoint_reachable: false,
             url: url.to_string(),
             request_template: Map::new(),
         }
@@ -47,7 +49,7 @@ impl Client {
         }
     }
 
-    fn has_authenticated(&mut self, js: &Value) -> bool {
+    fn has_authenticated(&self, js: &Value) -> bool {
         js.as_object()
             .and_then(|o| o.get("header"))
             .and_then(|v| v.as_object())
@@ -58,34 +60,31 @@ impl Client {
     }
 
     fn send(&mut self, payload: &Map<String, Value>) -> Result<Value> {
-        let attempts = 3;
         let url = format!("{}/api", self.url);
-        self.connected = false;
+        self.endpoint_reachable = false;
+        
+        let mut request = self.request_template.clone();
+        request.insert("payload".to_string(), Value::Object(payload.clone()));
 
-        for _ in 0..attempts {
-            let mut request = self.request_template.clone();
-            request.insert("payload".to_string(), Value::Object(payload.clone()));
+        let response = ureq::post(&url)
+            .send_json(Value::Object(request.clone()))
+            .map_err(|e| Box::new(e))?
+            .into_json()
+            .map_err(|e| Box::new(e))?;
 
-            let response = ureq::post(&url)
-                .send_json(Value::Object(request.clone()))
-                .map_err(|e| Box::new(e))?
-                .into_json()
-                .map_err(|e| Box::new(e))?;
+        if !self.has_authenticated(&response) {
+            self.auth_failure = true;
 
-            if self.has_authenticated(&response) {
-                let response = response.get("payload").ok_or(Error::from_client(
-                    "Invalid response from server: payload is not valid",
-                ))?;
-                self.connected = true;
-                return Ok(response.clone());
-            } else {
-                self.authenticate()?;
-            }
+            return Err(Error::from_client("Failed to authenticate"));
         }
 
-        Err(Box::new(Error::ClientError(
-            "Failed to authenticate".to_string(),
-        )))
+        let response = response.get("payload").ok_or(Error::from_client(
+            "Invalid response from server: payload is not valid",
+        ))?;
+
+        self.endpoint_reachable = true;
+        
+        return Ok(response.clone());
     }
 
     fn extract_value(value: &Map<String, Value>) -> Result<DatabaseValue> {
@@ -189,8 +188,18 @@ impl Client {
 }
 
 impl ClientTrait for Client {
+    fn connect(&mut self) -> Result<()> {
+        return self.authenticate();
+    }
+    
     fn connected(&self) -> bool {
-        self.connected
+        self.endpoint_reachable && !self.auth_failure
+    }
+
+    fn disconnect(&mut self) -> bool {
+        self.auth_failure = false;
+        self.endpoint_reachable = false;
+        true
     }
 
     fn get_entity(&mut self, entity_id: &str) -> Result<DatabaseEntity> {
