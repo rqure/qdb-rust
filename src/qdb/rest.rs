@@ -618,7 +618,7 @@ impl ClientTrait for Client {
         let mut request = Map::new();
         request.insert(
             "@type".to_string(),
-            Value::String("type.googleapis.com/qdb.WebRuntimeGetNotificationsResponse".to_string()),
+            Value::String("type.googleapis.com/qdb.WebRuntimeGetNotificationsRequest".to_string()),
         );
 
         let response = self.send(&request)?;
