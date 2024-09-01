@@ -6,9 +6,11 @@ mod qdb;
 fn main() {
     let app = qdb::Application::new(500);
     let mut ctx = qdb::ApplicationContext{
+        database: Box::new(
+            qdb::Database::new(
+            Box::new(qdb::rest::Client::new("http://localhost:8080"))
+        )),
         logger: Box::new(qdb::ConsoleLogger::new(qdb::LogLevel::Debug)),
-        client: Box::new(qdb::rest::Client::new("http://localhost:20000")),
-        notification_manager: Box::new(qdb::NotificationManager::new()),
         quit: false,
     };
 

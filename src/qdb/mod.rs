@@ -603,9 +603,8 @@ pub trait ApplicationTrait {
 }
 
 pub struct ApplicationContext {
-    pub client: Box<dyn ClientTrait>,
+    pub database: Box<dyn DatabaseTrait>,
     pub logger: Box<dyn LoggerTrait>,
-    pub notification_manager: Box<dyn NotificationManagerTrait>,
     pub quit: bool,
 }
 
