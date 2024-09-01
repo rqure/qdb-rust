@@ -189,9 +189,14 @@ impl Client {
 
 impl ClientTrait for Client {
     fn connect(&mut self) -> Result<()> {
-        return self.authenticate();
+        self.authenticate()?;
+
+        self.auth_failure = false;
+        self.endpoint_reachable = true;
+
+        Ok(())
     }
-    
+
     fn connected(&self) -> bool {
         self.endpoint_reachable && !self.auth_failure
     }
