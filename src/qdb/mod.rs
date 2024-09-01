@@ -506,9 +506,9 @@ impl<F> Slot<F> {
         Slot { callback }
     }
 
-    pub fn call<T>(&mut self, args: &T)
+    pub fn call<T>(&mut self, args: &mut T)
     where
-        F: FnMut(&T),
+        F: FnMut(&mut T),
     {
         (self.callback)(args);
     }
@@ -517,18 +517,18 @@ impl<F> Slot<F> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SlotToken(usize);
 
-pub trait SignalTrait<F: FnMut(&T), T> {
+pub trait SignalTrait<F: FnMut(&mut T), T> {
     fn connect(&mut self, slot: Slot<F>) -> SlotToken;
     fn disconnect(&mut self, token: &SlotToken);
-    fn emit(&mut self, args: &T);
+    fn emit(&mut self, args: &mut T);
 }
 
-pub struct Signal<F: FnMut(&T), T> {
+pub struct Signal<F: FnMut(&mut T), T> {
     slots: HashMap<SlotToken, Slot<F>>,
     args: std::marker::PhantomData<T>,
 }
 
-impl<F: FnMut(&T), T> Signal<F, T> {
+impl<F: FnMut(&mut T), T> Signal<F, T> {
     pub fn new() -> Self {
         Signal {
             slots: HashMap::new(),
@@ -537,7 +537,7 @@ impl<F: FnMut(&T), T> Signal<F, T> {
     }
 }
 
-impl<F: FnMut(&T), T> SignalTrait<F, T> for Signal<F, T> {
+impl<F: FnMut(&mut T), T> SignalTrait<F, T> for Signal<F, T> {
     fn connect(&mut self, slot: Slot<F>) -> SlotToken {
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
         let id = SlotToken(COUNTER.fetch_add(1, Ordering::Relaxed));
@@ -549,7 +549,7 @@ impl<F: FnMut(&T), T> SignalTrait<F, T> for Signal<F, T> {
         self.slots.remove(id);
     }
 
-    fn emit(&mut self, args: &T) {
+    fn emit(&mut self, args: &mut T) {
         for (_, slot) in self.slots.iter_mut() {
             slot.call(args);
         }
@@ -759,8 +759,8 @@ impl Application {
 }
 
 pub struct DatabaseWorkerSignals {
-    pub connected: Signal<fn(&()), ()>,
-    pub disconnected: Signal<fn(&()), ()>,
+    pub connected: Signal<fn(&mut ApplicationContext), ApplicationContext>,
+    pub disconnected: Signal<fn(&mut ApplicationContext), ApplicationContext>,
 }
 
 pub struct DatabaseWorker {
@@ -792,7 +792,7 @@ impl WorkerTrait for DatabaseWorker {
                 ctx.logger.log(&LogLevel::Warning, "[qdb::DatabaseWorker::do_work] Disconnected from database");
                 self.connected = false;
                 ctx.database.clear_notifications();
-                self.signals.disconnected.emit(&());
+                self.signals.disconnected.emit(ctx);
             }
 
             ctx.logger.log(&LogLevel::Debug, "[qdb::DatabaseWorker::do_work] Attempting to connect to the database...");
@@ -803,7 +803,7 @@ impl WorkerTrait for DatabaseWorker {
             if ctx.database.connected() {
                 self.connected = true;
                 ctx.logger.log(&LogLevel::Info, "[qdb::DatabaseWorker::do_work] Connected to the database");
-                self.signals.connected.emit(&());
+                self.signals.connected.emit(ctx);
             }
 
             return Ok(())

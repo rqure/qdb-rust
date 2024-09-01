@@ -560,7 +560,7 @@ impl ClientTrait for Client {
             "notifyOnChange".to_string(),
             Value::Bool(config.notify_on_change),
         );
-        notification.insert("context".to_string(), Value::Array(context));
+        notification.insert("contextFields".to_string(), Value::Array(context));
 
         let mut request = Map::new();
         request.insert(

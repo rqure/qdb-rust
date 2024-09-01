@@ -1,12 +1,22 @@
-use qdb::{ApplicationTrait, SignalTrait};
+use qdb::{ApplicationContext, ApplicationTrait, DatabaseNotification, NotificationConfig, SignalTrait};
 
 mod qdb;
 
-fn on_connected(args: &()) {
-    println!("Connected");
+fn on_current_time_changed(n: &DatabaseNotification) {
+    dbg!(n);
 }
 
-fn on_disconnected(args: &()) {
+fn on_connected(args: &mut ApplicationContext) {
+    args.database.register_notification(&NotificationConfig{
+        entity_type: "SystemClock".to_string(),
+        entity_id: "".to_string(),
+        field: "CurrentTime".to_string(),
+        notify_on_change: true,
+        context: vec![],
+    }, on_current_time_changed).unwrap();
+}
+
+fn on_disconnected(args: &mut ApplicationContext) {
     println!("Disconnected");
 }
 
