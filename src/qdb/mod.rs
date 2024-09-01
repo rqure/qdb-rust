@@ -392,13 +392,61 @@ pub mod rest;
 
 pub trait DatabaseTrait {
     fn connected(&self) -> bool;
-    fn get_entity(&self, entity_id: &str) -> Result<DatabaseEntity>;
-    fn get_entities(&self, entity_type: &str) -> Result<Vec<DatabaseEntity>>;
-    fn read(&self, requests: &mut Vec<DatabaseField>) -> Result<()>;
-    fn write(&self, requests: &mut Vec<DatabaseField>) -> Result<()>;
-    fn register_notification(&self, config: &NotificationConfig, callback: fn(&DatabaseNotification)) -> Result<NotificationToken>;
-    fn unregister_notification(&self, token: &NotificationToken) -> Result<()>;
-    fn process_notifications(&self) -> Result<Vec<DatabaseNotification>>;
+    fn get_entity(&mut self, entity_id: &str) -> Result<DatabaseEntity>;
+    fn get_entities(&mut self, entity_type: &str) -> Result<Vec<DatabaseEntity>>;
+    fn read(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()>;
+    fn write(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()>;
+    fn register_notification(&mut self, config: &NotificationConfig, callback: fn(&DatabaseNotification)) -> Result<NotificationToken>;
+    fn unregister_notification(&mut self, token: &NotificationToken) -> Result<()>;
+    fn process_notifications(&mut self) -> Result<()>;
+}
+
+pub struct Database {
+    client: Box<dyn ClientTrait>,
+    notification_manager: Box<dyn NotificationManagerTrait>,
+}
+
+impl Database {
+    pub fn new(client: Box<dyn ClientTrait>) -> Self {
+        Database {
+            client,
+            notification_manager: Box::new(NotificationManager::new()),
+        }
+    }
+}
+
+impl DatabaseTrait for Database {
+    fn connected(&self) -> bool {
+        self.client.connected()
+    }
+
+    fn get_entity(&mut self, entity_id: &str) -> Result<DatabaseEntity> {
+        self.client.get_entity(entity_id)
+    }
+
+    fn get_entities(&mut self, entity_type: &str) -> Result<Vec<DatabaseEntity>> {
+        self.client.get_entities(entity_type)
+    }
+
+    fn read(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()> {
+        self.client.read(requests)
+    }
+
+    fn write(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()> {
+        self.client.write(requests)
+    }
+
+    fn register_notification(&mut self, config: &NotificationConfig, callback: fn(&DatabaseNotification)) -> Result<NotificationToken> {
+        self.notification_manager.register(&mut *self.client, config, callback)
+    }
+
+    fn unregister_notification(&mut self, token: &NotificationToken) -> Result<()> {
+        self.notification_manager.unregister(&mut *self.client, token)
+    }
+
+    fn process_notifications(&mut self) -> Result<()> {
+        return self.notification_manager.process_notifications(&mut *self.client);
+    }
 }
 
 pub trait SlotTrait<T> {
