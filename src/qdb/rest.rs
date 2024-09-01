@@ -341,8 +341,6 @@ impl ClientTrait for Client {
         for entity in entities {
             match entity {
                 Value::Object(entity) => {
-                    println!("{:?}", entity);
-
                     let entity_id = entity
                         .get("id")
                         .and_then(|v| v.as_str())

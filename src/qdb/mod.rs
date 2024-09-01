@@ -3,6 +3,7 @@ pub type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
@@ -47,14 +48,14 @@ impl std::error::Error for Error {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DatabaseEntity {
     pub entity_id: String,
     pub entity_type: String,
     pub entity_name: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DatabaseField {
     pub entity_id: String,
     pub name: String,
@@ -114,7 +115,7 @@ impl From<&str> for NotificationToken {
 }
 
 pub trait NotificationManagerTrait {
-    fn reregister(&mut self, client: &mut dyn ClientTrait) -> Result<()>;
+    fn clear(&mut self);
     fn register(&mut self, client: &mut dyn ClientTrait, config: &NotificationConfig, callback: fn(&DatabaseNotification)) -> Result<NotificationToken>;
     fn unregister(&mut self, client: &mut dyn ClientTrait, token: &NotificationToken) -> Result<()>;
     fn process_notifications(&mut self, client: &mut dyn ClientTrait) -> Result<()>;
@@ -137,12 +138,10 @@ impl NotificationManager {
 }
 
 impl NotificationManagerTrait for NotificationManager {
-    fn reregister(&mut self, client: &mut dyn ClientTrait) -> Result<()> {
-        for config in &self.registered_config {            
-            client.register_notification(config)?;
-        }
-
-        Ok(())
+    fn clear(&mut self) {
+        self.registered_config.clear();
+        self.config_to_token.clear();
+        self.token_to_callback_list.clear();
     }
 
     fn register(&mut self, client: &mut dyn ClientTrait, config: &NotificationConfig, callback: fn(&DatabaseNotification)) -> Result<NotificationToken> {
@@ -195,7 +194,7 @@ impl NotificationManagerTrait for NotificationManager {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum DatabaseValue {
     Unspecified,
     String(String),
@@ -396,12 +395,13 @@ pub trait DatabaseTrait {
     fn connect(&mut self) -> Result<()>;
     fn connected(&self) -> bool;
     fn disconnect(&mut self) -> bool;
+    fn find(&mut self, entity_type: &str, field: &Vec<String>, predicate: fn(&HashMap<String, DatabaseField>) -> bool) -> Result<Vec<DatabaseEntity>>;
     fn get_entity(&mut self, entity_id: &str) -> Result<DatabaseEntity>;
     fn get_entities(&mut self, entity_type: &str) -> Result<Vec<DatabaseEntity>>;
     fn read(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()>;
     fn write(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()>;
+    fn clear_notifications(&mut self);
     fn register_notification(&mut self, config: &NotificationConfig, callback: fn(&DatabaseNotification)) -> Result<NotificationToken>;
-    fn reregister_notifications(&mut self) -> Result<()>;
     fn unregister_notification(&mut self, token: &NotificationToken) -> Result<()>;
     fn process_notifications(&mut self) -> Result<()>;
 }
@@ -421,6 +421,10 @@ impl Database {
 }
 
 impl DatabaseTrait for Database {
+    fn clear_notifications(&mut self) {
+        self.notification_manager.clear();
+    }
+
     fn connect(&mut self) -> Result<()> {
         return self.client.connect();
     }
@@ -441,6 +445,33 @@ impl DatabaseTrait for Database {
         self.client.get_entities(entity_type)
     }
 
+    fn find(&mut self, entity_type: &str, fields: &Vec<String>, predicate: fn(&HashMap<String, DatabaseField>) -> bool) -> Result<Vec<DatabaseEntity>> {
+        let entities = self.get_entities(entity_type)?;
+        let mut result = vec![];
+
+        for entity in &entities {
+            let mut requests = vec![];
+
+            for field in fields {
+                let field = DatabaseField::new(entity.entity_id.clone(), field.clone());
+                requests.push(field);
+            }
+            
+            self.read(&mut requests)?;
+
+            let mut fields_map = HashMap::new();
+            for field in &requests {
+                fields_map.insert(field.name.clone(), field.clone());
+            }
+
+            if predicate(&fields_map) {
+                result.push(entity.clone());
+            }
+        }
+
+        Ok(result)
+    }
+
     fn read(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()> {
         self.client.read(requests)
     }
@@ -451,10 +482,6 @@ impl DatabaseTrait for Database {
 
     fn register_notification(&mut self, config: &NotificationConfig, callback: fn(&DatabaseNotification)) -> Result<NotificationToken> {
         self.notification_manager.register(&mut *self.client, config, callback)
-    }
-
-    fn reregister_notifications(&mut self) -> Result<()> {
-        self.notification_manager.reregister(&mut *self.client)
     }
 
     fn unregister_notification(&mut self, token: &NotificationToken) -> Result<()> {
@@ -764,6 +791,7 @@ impl WorkerTrait for DatabaseWorker {
             if self.connected {
                 ctx.logger.log(&LogLevel::Warning, "[qdb::DatabaseWorker::do_work] Disconnected from database");
                 self.connected = false;
+                ctx.database.clear_notifications();
                 self.signals.disconnected.emit(&());
             }
 
@@ -775,8 +803,6 @@ impl WorkerTrait for DatabaseWorker {
             if ctx.database.connected() {
                 self.connected = true;
                 ctx.logger.log(&LogLevel::Info, "[qdb::DatabaseWorker::do_work] Connected to the database");
-
-                ctx.database.reregister_notifications()?;
                 self.signals.connected.emit(&());
             }
 
