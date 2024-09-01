@@ -378,6 +378,7 @@ impl ValueTrait for DatabaseValue {
 }
 
 pub trait ClientTrait {
+    fn connected(&self) -> bool;
     fn get_entity(&mut self, entity_id: &str) -> Result<DatabaseEntity>;
     fn get_entities(&mut self, entity_type: &str) -> Result<Vec<DatabaseEntity>>;
     fn read(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()>;
@@ -388,6 +389,17 @@ pub trait ClientTrait {
 }
 
 pub mod rest;
+
+pub trait DatabaseTrait {
+    fn connected(&self) -> bool;
+    fn get_entity(&self, entity_id: &str) -> Result<DatabaseEntity>;
+    fn get_entities(&self, entity_type: &str) -> Result<Vec<DatabaseEntity>>;
+    fn read(&self, requests: &mut Vec<DatabaseField>) -> Result<()>;
+    fn write(&self, requests: &mut Vec<DatabaseField>) -> Result<()>;
+    fn register_notification(&self, config: &NotificationConfig, callback: fn(&DatabaseNotification)) -> Result<NotificationToken>;
+    fn unregister_notification(&self, token: &NotificationToken) -> Result<()>;
+    fn process_notifications(&self) -> Result<Vec<DatabaseNotification>>;
+}
 
 pub trait SlotTrait<T> {
     fn call(&mut self, args: T);

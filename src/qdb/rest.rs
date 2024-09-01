@@ -15,13 +15,15 @@ use ureq::serde_json::Value;
 use chrono::{prelude, DateTime, Utc};
 
 pub struct Client {
-    url: String,
+    connected: bool,
     request_template: Map<String, Value>,
+    url: String,
 }
 
 impl Client {
     pub fn new(url: &str) -> Self {
         Client {
+            connected: false,
             url: url.to_string(),
             request_template: Map::new(),
         }
@@ -58,6 +60,7 @@ impl Client {
     fn send(&mut self, payload: &Map<String, Value>) -> Result<Value> {
         let attempts = 3;
         let url = format!("{}/api", self.url);
+        self.connected = false;
 
         for _ in 0..attempts {
             let mut request = self.request_template.clone();
@@ -73,6 +76,7 @@ impl Client {
                 let response = response.get("payload").ok_or(Error::from_client(
                     "Invalid response from server: payload is not valid",
                 ))?;
+                self.connected = true;
                 return Ok(response.clone());
             } else {
                 self.authenticate()?;
@@ -185,6 +189,10 @@ impl Client {
 }
 
 impl ClientTrait for Client {
+    fn connected(&self) -> bool {
+        self.connected
+    }
+
     fn get_entity(&mut self, entity_id: &str) -> Result<DatabaseEntity> {
         let mut request = Map::new();
         request.insert(
