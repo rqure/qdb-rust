@@ -59,6 +59,56 @@ impl Client {
             .unwrap_or(false)
     }
 
+    fn parse_database_field(&self, notification: &Value, prefix: &str) -> Result<DatabaseField> {
+        let entity_id = notification
+            .pointer(&format!("{}/id", prefix))
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                Error::from_client("Invalid response from server: entity ID is not valid")
+            })?
+            .to_string();
+
+        let name = notification
+            .pointer(&format!("{}/name", prefix))
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                Error::from_client("Invalid response from server: name is not valid")
+            })?
+            .to_string();
+
+        let write_time = DateTime::parse_from_rfc3339(
+            notification
+                .pointer(&format!("{}/writeTime", prefix))
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    Error::from_client("Invalid response from server: writeTime is not valid")
+                })?,
+        )?
+        .with_timezone(&Utc);
+
+        let writer_id = notification
+            .pointer(&format!("{}/writerId", prefix))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        let value = Client::extract_value(
+            notification
+                .pointer(&format!("{}/value", prefix))
+                .and_then(|v| v.as_object())
+                .unwrap_or(&Map::new()),
+        )
+        .unwrap_or(DatabaseValue::Unspecified);
+
+        Ok(DatabaseField {
+            entity_id,
+            name,
+            write_time,
+            writer_id,
+            value,
+        })
+    }
+
     fn send(&mut self, payload: &Map<String, Value>) -> Result<Value> {
         let url = format!("{}/api", self.url);
         self.endpoint_reachable = false;
@@ -624,191 +674,38 @@ impl ClientTrait for Client {
             .as_object()
             .and_then(|o| o.get("notifications"))
             .and_then(|v| v.as_array())
-            .ok_or(Error::from_client(
-                "Invalid response from server: notifications is not valid",
-            ))?;
+            .ok_or_else(|| {
+                Error::from_client("Invalid response from server: notifications is not valid")
+            })?;
 
-        let mut result = vec![];
+        let mut result = Vec::with_capacity(notifications.len());
         for notification in notifications {
+            let token = notification
+                .pointer("/token")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    Error::from_client("Invalid response from server: notification token is not valid")
+                })?
+                .to_string();
+
+            let current = self.parse_database_field(notification, "/current")?;
+            let previous = self.parse_database_field(notification, "/previous")?;
+
+            let context = notification
+                .pointer("/context")
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| {
+                    Error::from_client("Invalid response from server: notification context is not valid")
+                })?
+                .iter()
+                .map(|v| self.parse_database_field(v, ""))
+                .collect::<Result<Vec<DatabaseField>>>()?;
+
             result.push(DatabaseNotification {
-                token: notification
-                    .pointer("/token")
-                    .ok_or(Error::from_client(
-                        "Invalid response from server: notifications is not valid",
-                    ))?
-                    .as_str()
-                    .ok_or(Error::from_client(
-                        "Invalid response from server: notifications is not valid",
-                    ))?
-                    .into(),
-                current: DatabaseField {
-                    entity_id: notification
-                        .pointer("/current/id")
-                        .ok_or(Error::from_client(
-                            "Invalid response from server: notifications is not valid",
-                        ))?
-                        .as_str()
-                        .ok_or(Error::from_client(
-                            "Invalid response from server: notifications is not valid",
-                        ))?
-                        .into(),
-                    name: notification
-                        .pointer("/current/name")
-                        .ok_or(Error::from_client(
-                            "Invalid response from server: notifications is not valid",
-                        ))?
-                        .as_str()
-                        .ok_or(Error::from_client(
-                            "Invalid response from server: notifications is not valid",
-                        ))?
-                        .into(),
-                    write_time: DateTime::parse_from_rfc3339(
-                        notification
-                            .pointer("/current/writeTime")
-                            .and_then(|v| v.as_object())
-                            .ok_or(Error::from_client(
-                                "Invalid response from server: notifications is not valid",
-                            ))?
-                            .get("raw")
-                            .ok_or(Error::from_client(
-                                "Invalid response from server: notifications is not valid",
-                            ))?
-                            .as_str()
-                            .ok_or(Error::from_client(
-                                "Invalid response from server: notifications is not valid",
-                            ))?,
-                    )?
-                    .to_utc(),
-                    writer_id: notification
-                        .pointer("/current/writeTime")
-                        .and_then(|v| v.as_object())
-                        .ok_or(Error::from_client(
-                            "Invalid response from server: notifications is not valid",
-                        ))?
-                        .get("raw")
-                        .ok_or(Error::from_client(
-                            "Invalid response from server: notifications is not valid",
-                        ))?
-                        .as_str()
-                        .ok_or(Error::from_client(
-                            "Invalid response from server: notifications is not valid",
-                        ))?
-                        .to_string(),
-                    value: Client::extract_value(
-                        notification
-                            .pointer("/current/value")
-                            .and_then(|v| v.as_object())
-                            .ok_or(Error::from_client(
-                                "Invalid response from server: notifications is not valid",
-                            ))?,
-                    )?,
-                },
-                previous: DatabaseField {
-                    entity_id: notification
-                        .pointer("/previous/id")
-                        .ok_or(Error::from_client(
-                            "Invalid response from server: notifications is not valid",
-                        ))?
-                        .as_str()
-                        .ok_or(Error::from_client(
-                            "Invalid response from server: notifications is not valid",
-                        ))?
-                        .into(),
-                    name: notification
-                        .pointer("/previous/name")
-                        .ok_or(Error::from_client(
-                            "Invalid response from server: notifications is not valid",
-                        ))?
-                        .as_str()
-                        .ok_or(Error::from_client(
-                            "Invalid response from server: notifications is not valid",
-                        ))?
-                        .into(),
-                    write_time: DateTime::parse_from_rfc3339(
-                        notification
-                            .pointer("/previous/writeTime")
-                            .and_then(|v| v.as_object())
-                            .ok_or(Error::from_client(
-                                "Invalid response from server: notifications is not valid",
-                            ))?
-                            .get("raw")
-                            .ok_or(Error::from_client(
-                                "Invalid response from server: notifications is not valid",
-                            ))?
-                            .as_str()
-                            .ok_or(Error::from_client(
-                                "Invalid response from server: notifications is not valid",
-                            ))?,
-                    )?
-                    .to_utc(),
-                    writer_id: notification
-                        .pointer("/previous/writerId")
-                        .and_then(|v| v.as_object())
-                        .ok_or(Error::from_client(
-                            "Invalid response from server: notifications is not valid",
-                        ))?
-                        .get("raw")
-                        .ok_or(Error::from_client(
-                            "Invalid response from server: notifications is not valid",
-                        ))?
-                        .as_str()
-                        .ok_or(Error::from_client(
-                            "Invalid response from server: notifications is not valid",
-                        ))?
-                        .to_string(),
-                    value: Client::extract_value(
-                        notification
-                            .pointer("/previous/value")
-                            .and_then(|v| v.as_object())
-                            .ok_or(Error::from_client(
-                                "Invalid response from server: notifications is not valid",
-                            ))?,
-                    )?,
-                },
-                context: notification
-                    .pointer("/context")
-                    .and_then(|v| v.as_array())
-                    .ok_or(Error::from_client(
-                        "Invalid response from server: notifications is not valid",
-                    ))?
-                    .iter()
-                    .map(|v| DatabaseField {
-                        entity_id: v
-                            .pointer("/id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string(),
-                        name: v
-                            .pointer("/name")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string(),
-                        write_time: DateTime::parse_from_rfc3339(
-                            v.pointer("/writeTime")
-                                .and_then(|v| v.as_object())
-                                .and_then(|v| v.get("raw"))
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string()
-                                .as_str(),
-                        )
-                        .unwrap_or_else(|_| Utc::now().fixed_offset())
-                        .to_utc(),
-                        writer_id: v
-                            .pointer("/writerId")
-                            .and_then(|v| v.as_object())
-                            .and_then(|v| v.get("raw"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string(),
-                        value: Client::extract_value(
-                            v.pointer("/value")
-                                .and_then(|v| v.as_object())
-                                .unwrap_or(&Map::new()),
-                        )
-                        .unwrap_or(DatabaseValue::Unspecified),
-                    })
-                    .collect(),
+                token,
+                current,
+                previous,
+                context,
             });
         }
 
