@@ -8,27 +8,28 @@ fn on_current_time_changed(n: &DatabaseNotification, db: Database) -> qdb::Resul
     Ok(())
 }
 
-fn on_connected(args: &mut ApplicationContext) {
-    args.database.register_notification(&NotificationConfig{
+fn on_connected(args: &ApplicationContext) {
+    let db = args.database().clone();
+    args.database().register_notification(&NotificationConfig{
         entity_type: "SystemClock".to_string(),
         entity_id: "".to_string(),
         field: "CurrentTime".to_string(),
         notify_on_change: true,
         context: vec![],
-    }, NotificationCallback::new(|n| on_current_time_changed(n, args.database.clone()))).unwrap();
+    }, NotificationCallback::new(move |n| on_current_time_changed(n, db.clone()))).unwrap();
 }
 
-fn on_disconnected(args: &mut ApplicationContext) {
+fn on_disconnected(args: &ApplicationContext) {
     println!("Disconnected");
 }
 
 fn main() {
-    let mut app = qdb::Application::new(500);
-    let mut ctx = qdb::ApplicationContext{
-        database: qdb::Database::new(qdb::rest::Client::new("http://localhost:20000")),
-        logger: qdb::Logger::new(qdb::ConsoleLogger::new(qdb::LogLevel::Debug)),
-        quit: qdb::BoolFlag::new(),
-    };
+    let ctx = qdb::ApplicationContext::new(
+        qdb::Database::new(qdb::rest::Client::new("http://localhost:20000")),
+        qdb::Logger::new(qdb::ConsoleLogger::new(qdb::LogLevel::Debug)),
+    );
+
+    let mut app = qdb::Application::new(ctx, 500);
 
     let mut db_worker = qdb::DatabaseWorker::new();
     db_worker.signals.connected.connect(qdb::Slot::new(on_connected));
@@ -36,5 +37,5 @@ fn main() {
 
     app.add_worker(Box::new(db_worker));
 
-    app.execute(&mut ctx);
+    app.execute();
 }
