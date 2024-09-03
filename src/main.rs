@@ -1,8 +1,8 @@
-use qdb::{ApplicationContext, ApplicationTrait, DatabaseNotification, NotificationConfig, SignalTrait};
+use qdb::{ApplicationContext, ApplicationTrait, DatabaseNotification, NotificationConfig, SignalTrait, NotificationCallback};
 
 mod qdb;
 
-fn on_current_time_changed(n: &DatabaseNotification) {
+fn on_current_time_changed(n: &DatabaseNotification, ctx: &mut ApplicationContext) {
     dbg!(n);
 }
 
@@ -13,7 +13,7 @@ fn on_connected(args: &mut ApplicationContext) {
         field: "CurrentTime".to_string(),
         notify_on_change: true,
         context: vec![],
-    }, on_current_time_changed).unwrap();
+    }, NotificationCallback::new(move |n| on_current_time_changed(n, args))).unwrap();
 }
 
 fn on_disconnected(args: &mut ApplicationContext) {
