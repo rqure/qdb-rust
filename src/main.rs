@@ -1,24 +1,26 @@
-use qdb::{ApplicationContext, ApplicationTrait, DatabaseNotification, NotificationConfig, SignalTrait, NotificationCallback};
+use qdb::{ApplicationContext, ApplicationTrait, Database, DatabaseNotification, NotificationCallback, NotificationConfig, SignalTrait};
 
 mod qdb;
 
-// fn on_current_time_changed(n: &DatabaseNotification) {
-//     dbg!(n);
-// }
+fn on_current_time_changed(n: &DatabaseNotification, db: Database) -> qdb::Result<()> {
+    let n = n.current.value().as_str()?;
 
-// fn on_connected(args: &mut ApplicationContext) {
-//     args.database.register_notification(&NotificationConfig{
-//         entity_type: "SystemClock".to_string(),
-//         entity_id: "".to_string(),
-//         field: "CurrentTime".to_string(),
-//         notify_on_change: true,
-//         context: vec![],
-//     }, NotificationCallback::new(move |n| on_current_time_changed(n, args))).unwrap();
-// }
+    Ok(())
+}
 
-// fn on_disconnected(args: &mut ApplicationContext) {
-//     println!("Disconnected");
-// }
+fn on_connected(args: &mut ApplicationContext) {
+    args.database.register_notification(&NotificationConfig{
+        entity_type: "SystemClock".to_string(),
+        entity_id: "".to_string(),
+        field: "CurrentTime".to_string(),
+        notify_on_change: true,
+        context: vec![],
+    }, NotificationCallback::new(move |n| on_current_time_changed(n, args.database.clone()))).unwrap();
+}
+
+fn on_disconnected(args: &mut ApplicationContext) {
+    println!("Disconnected");
+}
 
 fn main() {
     let mut app = qdb::Application::new(500);
@@ -29,8 +31,8 @@ fn main() {
     };
 
     let mut db_worker = qdb::DatabaseWorker::new();
-    // db_worker.signals.connected.connect(qdb::Slot::new(on_connected));
-    // db_worker.signals.disconnected.connect(qdb::Slot::new(on_disconnected));
+    db_worker.signals.connected.connect(qdb::Slot::new(on_connected));
+    db_worker.signals.disconnected.connect(qdb::Slot::new(on_disconnected));
 
     app.add_worker(Box::new(db_worker));
 

@@ -61,7 +61,7 @@ impl Client {
             .unwrap_or(false)
     }
 
-    fn parse_database_field(&self, notification: &Value, prefix: &str) -> Result<RawField> {
+    fn parse_database_field(&self, notification: &Value, prefix: &str) -> Result<DatabaseField> {
         let entity_id = notification
             .pointer(&format!("{}/id", prefix))
             .and_then(|v| v.as_str())
@@ -108,7 +108,7 @@ impl Client {
             write_time,
             writer_id,
             value,
-        })
+        }.into_field())
     }
 
     fn send(&mut self, payload: &Map<String, Value>) -> Result<Value> {
@@ -701,7 +701,7 @@ impl ClientTrait for Client {
                 })?
                 .iter()
                 .map(|v| self.parse_database_field(v, ""))
-                .collect::<Result<Vec<RawField>>>()?;
+                .collect::<Result<Vec<DatabaseField>>>()?;
 
             result.push(DatabaseNotification {
                 token,
