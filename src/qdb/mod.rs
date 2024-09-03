@@ -326,12 +326,12 @@ impl _NotificationManager {
 
         for notification in &notifications {
             let token = NotificationToken(notification.token.clone());
-            self.token_to_callback_list.get_mut(&token)
-                .unwrap_or(&mut vec![])
-                .iter_mut()
-                .for_each(|callback| {
-                    callback.0(notification);
-                });
+            let callbacks = self.token_to_callback_list.get_mut(&token)
+                .ok_or(Error::from_notification("Cannot process notification: Callback list doesn't exist for token"))?;
+
+            for callback in callbacks {
+                callback.0(&notification)?;
+            }
         }
 
         Ok(())
