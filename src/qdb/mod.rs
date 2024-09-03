@@ -57,25 +57,28 @@ pub struct DatabaseEntity {
     pub entity_name: String,
 }
 
-pub trait FieldTrait {
-    fn entity_id(&self) -> String;
-    fn name(&self) -> String;
-    fn value(&self) -> IValue;
-    fn write_time(&self) -> DateTime<Utc>;
-    fn writer_id(&self) -> String;
-}
+pub type FieldRef = Rc<RefCell<RawField>>;
 
-pub type FieldRef = Rc<RefCell<dyn FieldTrait>>;
+pub struct DatabaseField(FieldRef);
 
-pub struct IField(FieldRef);
-
-impl IField {
-    pub fn new(field: DatabaseField) -> Self {
-        IField(Rc::new(RefCell::new(field)))
+impl DatabaseField {
+    pub fn new(field: RawField) -> Self {
+        DatabaseField(Rc::new(RefCell::new(field)))
     }
 
     pub fn clone(&self) -> Self {
-        IField(self.0.clone())
+        DatabaseField(self.0.clone())
+    }
+
+    pub fn into_raw(self) -> RawField {
+        let field = self.0.borrow();
+        RawField {
+            entity_id: field.entity_id(),
+            name: field.name(),
+            value: field.value(),
+            write_time: field.write_time(),
+            writer_id: field.writer_id(),
+        }
     }
 
     pub fn entity_id(&self) -> String {
@@ -86,7 +89,7 @@ impl IField {
         self.0.borrow().name()
     }
 
-    pub fn value(&self) -> IValue {
+    pub fn value(&self) -> DatabaseValue {
         self.0.borrow().value()
     }
 
@@ -97,17 +100,37 @@ impl IField {
     pub fn writer_id(&self) -> String {
         self.0.borrow().writer_id()
     }
+
+    pub fn update_entity_id(&self, entity_id: &str) {
+        self.0.borrow_mut().update_entity_id(entity_id);
+    }
+
+    pub fn update_value(&self, value: DatabaseValue) {
+        self.0.borrow_mut().update_value(value);
+    }
+
+    pub fn update_write_time(&self, write_time: DateTime<Utc>) {
+        self.0.borrow_mut().update_write_time(write_time);
+    }
+
+    pub fn update_writer_id(&self, writer_id: &str) {
+        self.0.borrow_mut().update_writer_id(writer_id);
+    }
+
+    pub fn update_name(&self, name: &str) {
+        self.0.borrow_mut().update_name(name);
+    }
 }
 
-pub struct DatabaseField {
+pub struct RawField {
     pub entity_id: String,
     pub name: String,
-    pub value: IValue,
+    pub value: DatabaseValue,
     pub write_time: DateTime<Utc>,
     pub writer_id: String,
 }
 
-impl FieldTrait for DatabaseField {
+impl RawField {
     fn entity_id(&self) -> String {
         self.entity_id.clone()
     }
@@ -116,7 +139,7 @@ impl FieldTrait for DatabaseField {
         self.name.clone()
     }
 
-    fn value(&self) -> IValue {
+    fn value(&self) -> DatabaseValue {
         self.value.clone()
     }
 
@@ -127,25 +150,49 @@ impl FieldTrait for DatabaseField {
     fn writer_id(&self) -> String {
         self.writer_id.clone()
     }
+
+    fn update_entity_id(&mut self, entity_id: &str) {
+        self.entity_id = entity_id.into();
+    }
+
+    fn update_value(&mut self, value: DatabaseValue) {
+        self.value = value;
+    }
+
+    fn update_write_time(&mut self, write_time: DateTime<Utc>) {
+        self.write_time = write_time;
+    }
+
+    fn update_writer_id(&mut self, writer_id: &str) {
+        self.writer_id = writer_id.into();
+    }
+
+    fn update_name(&mut self, name: &str) {
+        self.name = name.into();
+    }
 }
 
-impl DatabaseField {
+impl RawField {
     pub fn new(entity_id: impl Into<String>, field: impl Into<String>) -> Self {
-        DatabaseField {
+        RawField {
             entity_id: entity_id.into(),
             name: field.into(),
-            value: IValue::new(DatabaseValue::Unspecified),
+            value: DatabaseValue::new(RawValue::Unspecified),
             write_time: Utc::now(),
             writer_id: "".to_string(),
         }
+    }
+
+    pub fn into_field(self) -> DatabaseField {
+        DatabaseField::new(self)
     }
 }
 
 pub struct DatabaseNotification {
     pub token: String,
-    pub current: DatabaseField,
-    pub previous: DatabaseField,
-    pub context: Vec<DatabaseField>,
+    pub current: RawField,
+    pub previous: RawField,
+    pub context: Vec<RawField>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -178,13 +225,6 @@ impl From<&str> for NotificationToken {
     }
 }
 
-pub trait NotificationManagerTrait {
-    fn clear(&mut self);
-    fn register(&mut self, client: &mut dyn ClientTrait, config: &NotificationConfig, callback: NotificationCallback) -> Result<NotificationToken>;
-    fn unregister(&mut self, client: &mut dyn ClientTrait, token: &NotificationToken) -> Result<()>;
-    fn process_notifications(&mut self, client: &mut dyn ClientTrait) -> Result<()>;
-}
-
 pub struct NotificationCallback(Box<dyn FnMut(&DatabaseNotification)>);
 
 impl NotificationCallback {
@@ -193,15 +233,44 @@ impl NotificationCallback {
     }
 }
 
-pub struct NotificationManager {
+pub struct _NotificationManager {
     registered_config: HashSet<NotificationConfig>,
     config_to_token: HashMap<NotificationConfig, NotificationToken>,
     token_to_callback_list: HashMap<NotificationToken, Vec<NotificationCallback>>
 }
 
+type NotificationManagerRef = Rc<RefCell<_NotificationManager>>;
+pub struct NotificationManager(NotificationManagerRef);
+
 impl NotificationManager {
     pub fn new() -> Self {
-        NotificationManager {
+        NotificationManager(Rc::new(RefCell::new(_NotificationManager::new())))
+    }
+
+    pub fn clone(&self) -> Self {
+        NotificationManager(self.0.clone())
+    }
+
+    pub fn clear(&self) {
+        self.0.borrow_mut().clear();
+    }
+
+    pub fn register(&self, client: Client, config: &NotificationConfig, callback: NotificationCallback) -> Result<NotificationToken> {
+        self.0.borrow_mut().register(client, config, callback)
+    }
+
+    pub fn unregister(&self, client: Client, token: &NotificationToken) -> Result<()> {
+        self.0.borrow_mut().unregister(client, token)
+    }
+
+    pub fn process_notifications(&self, client: Client) -> Result<()> {
+        self.0.borrow_mut().process_notifications(client)
+    }
+}
+
+impl _NotificationManager {
+    pub fn new() -> Self {
+        _NotificationManager {
             registered_config: HashSet::new(),
             config_to_token: HashMap::new(),
             token_to_callback_list: HashMap::new()
@@ -209,14 +278,14 @@ impl NotificationManager {
     }
 }
 
-impl NotificationManagerTrait for NotificationManager {
+impl _NotificationManager {
     fn clear(&mut self) {
         self.registered_config.clear();
         self.config_to_token.clear();
         self.token_to_callback_list.clear();
     }
 
-    fn register(&mut self, client: &mut dyn ClientTrait, config: &NotificationConfig, callback: NotificationCallback) -> Result<NotificationToken> {
+    fn register(&mut self, client: Client, config: &NotificationConfig, callback: NotificationCallback) -> Result<NotificationToken> {
         if self.registered_config.contains(&config) {
             let token = self.config_to_token.get(config)
                 .ok_or(Error::from_notification("Inconsistent notification state during registration"))?;
@@ -237,7 +306,7 @@ impl NotificationManagerTrait for NotificationManager {
         Ok(token)
     }
 
-    fn unregister(&mut self, client: &mut dyn ClientTrait, token: &NotificationToken) -> Result<()> {
+    fn unregister(&mut self, client: Client, token: &NotificationToken) -> Result<()> {
         if !self.token_to_callback_list.contains_key(token) {
             return Err(Error::from_notification("Token not found during unregistration"));
         }
@@ -251,7 +320,7 @@ impl NotificationManagerTrait for NotificationManager {
         Ok(())
     }
 
-    fn process_notifications(&mut self, client: &mut dyn ClientTrait) -> Result<()> {
+    fn process_notifications(&mut self, client: Client) -> Result<()> {
         let notifications = client.get_notifications()?;
 
         for notification in &notifications {
@@ -268,27 +337,8 @@ impl NotificationManagerTrait for NotificationManager {
     }
 }
 
-pub trait ValueTrait {
-    fn as_str(&self) -> Result<String>;
-    fn as_i64(&self) -> Result<i64>;
-    fn as_f64(&self) -> Result<f64>;
-    fn as_bool(&self) -> Result<bool>;
-    fn as_entity_reference(&self) -> Result<String>;
-    fn as_timestamp(&self) -> Result<DateTime<Utc>>;
-    fn as_connection_state(&self) -> Result<String>;
-    fn as_garage_door_state(&self) -> Result<String>;
-    fn update_str(&mut self, value: String) -> Result<()>;
-    fn update_i64(&mut self, value: i64) -> Result<()>;
-    fn update_f64(&mut self, value: f64) -> Result<()>;
-    fn update_bool(&mut self, value: bool) -> Result<()>;
-    fn update_entity_reference(&mut self, value: String) -> Result<()>;
-    fn update_timestamp(&mut self, value: DateTime<Utc>) -> Result<()>;
-    fn update_connection_state(&mut self, value: String) -> Result<()>;
-    fn update_garage_door_state(&mut self, value: String) -> Result<()>;
-}#
-
-[derive(Debug, Clone, PartialEq)]
-pub enum DatabaseValue {
+#[derive(Debug, Clone, PartialEq)]
+pub enum RawValue {
     Unspecified,
     String(String),
     Integer(i64),
@@ -300,38 +350,42 @@ pub enum DatabaseValue {
     GarageDoorState(String),
 }
 
-impl ValueTrait for DatabaseValue {
+impl RawValue {
+    fn into_value(self) -> DatabaseValue {
+        DatabaseValue::new(self)
+    }
+
     fn as_str(&self) -> Result<String> {
         match self {
-            DatabaseValue::String(s) => Ok(s.clone()),
+            RawValue::String(s) => Ok(s.clone()),
             _ => Err(Error::from_database_field("Value is not a string")),
         }
     }
 
     fn as_i64(&self) -> Result<i64> {
         match self {
-            DatabaseValue::Integer(i) => Ok(*i),
+            RawValue::Integer(i) => Ok(*i),
             _ => Err(Error::from_database_field("Value is not an integer")),
         }
     }
 
     fn as_f64(&self) -> Result<f64> {
         match self {
-            DatabaseValue::Float(f) => Ok(*f),
+            RawValue::Float(f) => Ok(*f),
             _ => Err(Error::from_database_field("Value is not a float")),
         }
     }
 
     fn as_bool(&self) -> Result<bool> {
         match self {
-            DatabaseValue::Boolean(b) => Ok(*b),
+            RawValue::Boolean(b) => Ok(*b),
             _ => Err(Error::from_database_field("Value is not a boolean")),
         }
     }
 
     fn as_entity_reference(&self) -> Result<String> {
         match self {
-            DatabaseValue::EntityReference(e) => Ok(e.clone()),
+            RawValue::EntityReference(e) => Ok(e.clone()),
             _ => Err(Error::from_database_field(
                 "Value is not an entity reference",
             )),
@@ -340,14 +394,14 @@ impl ValueTrait for DatabaseValue {
 
     fn as_timestamp(&self) -> Result<DateTime<Utc>> {
         match self {
-            DatabaseValue::Timestamp(t) => Ok(*t),
+            RawValue::Timestamp(t) => Ok(*t),
             _ => Err(Error::from_database_field("Value is not a timestamp")),
         }
     }
 
     fn as_connection_state(&self) -> Result<String> {
         match self {
-            DatabaseValue::ConnectionState(c) => Ok(c.clone()),
+            RawValue::ConnectionState(c) => Ok(c.clone()),
             _ => Err(Error::from_database_field(
                 "Value is not a connection state",
             )),
@@ -356,7 +410,7 @@ impl ValueTrait for DatabaseValue {
 
     fn as_garage_door_state(&self) -> Result<String> {
         match self {
-            DatabaseValue::GarageDoorState(g) => Ok(g.clone()),
+            RawValue::GarageDoorState(g) => Ok(g.clone()),
             _ => Err(Error::from_database_field(
                 "Value is not a garage door state",
             )),
@@ -365,7 +419,7 @@ impl ValueTrait for DatabaseValue {
 
     fn update_str(&mut self, value: String) -> Result<()> {
         match self {
-            DatabaseValue::String(s) => {
+            RawValue::String(s) => {
                 *s = value;
                 Ok(())
             }
@@ -375,7 +429,7 @@ impl ValueTrait for DatabaseValue {
 
     fn update_i64(&mut self, value: i64) -> Result<()> {
         match self {
-            DatabaseValue::Integer(i) => {
+            RawValue::Integer(i) => {
                 *i = value;
                 Ok(())
             }
@@ -385,7 +439,7 @@ impl ValueTrait for DatabaseValue {
 
     fn update_f64(&mut self, value: f64) -> Result<()> {
         match self {
-            DatabaseValue::Float(f) => {
+            RawValue::Float(f) => {
                 *f = value;
                 Ok(())
             }
@@ -395,7 +449,7 @@ impl ValueTrait for DatabaseValue {
 
     fn update_bool(&mut self, value: bool) -> Result<()> {
         match self {
-            DatabaseValue::Boolean(b) => {
+            RawValue::Boolean(b) => {
                 *b = value;
                 Ok(())
             }
@@ -405,7 +459,7 @@ impl ValueTrait for DatabaseValue {
 
     fn update_entity_reference(&mut self, value: String) -> Result<()> {
         match self {
-            DatabaseValue::EntityReference(e) => {
+            RawValue::EntityReference(e) => {
                 *e = value;
                 Ok(())
             }
@@ -417,7 +471,7 @@ impl ValueTrait for DatabaseValue {
 
     fn update_timestamp(&mut self, value: DateTime<Utc>) -> Result<()> {
         match self {
-            DatabaseValue::Timestamp(t) => {
+            RawValue::Timestamp(t) => {
                 *t = value;
                 Ok(())
             }
@@ -427,7 +481,7 @@ impl ValueTrait for DatabaseValue {
 
     fn update_connection_state(&mut self, value: String) -> Result<()> {
         match self {
-            DatabaseValue::ConnectionState(c) => {
+            RawValue::ConnectionState(c) => {
                 *c = value;
                 Ok(())
             }
@@ -439,7 +493,7 @@ impl ValueTrait for DatabaseValue {
 
     fn update_garage_door_state(&mut self, value: String) -> Result<()> {
         match self {
-            DatabaseValue::GarageDoorState(g) => {
+            RawValue::GarageDoorState(g) => {
                 *g = value;
                 Ok(())
             }
@@ -450,21 +504,25 @@ impl ValueTrait for DatabaseValue {
     }
 }
 
-type ValueRef = Rc<RefCell<dyn ValueTrait>>;
+type ValueRef = Rc<RefCell<RawValue>>;
 
-struct IValue(ValueRef);
+struct DatabaseValue(ValueRef);
 
-impl IValue {
-    fn new(value: DatabaseValue) -> Self {
-        IValue(Rc::new(RefCell::new(value)))
+impl DatabaseValue {
+    fn new(value: RawValue) -> Self {
+        DatabaseValue(Rc::new(RefCell::new(value)))
     }
 
     fn clone(&self) -> Self {
-        IValue(self.0.clone())
+        DatabaseValue(self.0.clone())
+    }
+
+    fn into_raw(self) -> RawValue {
+        self.0.borrow().clone()
     }
 }
 
-impl IValue {
+impl DatabaseValue {
     fn as_str(&self) -> Result<String> {
         self.0.borrow().as_str()
     }
@@ -537,49 +595,163 @@ pub trait ClientTrait {
     fn get_entities(&mut self, entity_type: &str) -> Result<Vec<DatabaseEntity>>;
     fn get_entity(&mut self, entity_id: &str) -> Result<DatabaseEntity>;
     fn get_notifications(&mut self) -> Result<Vec<DatabaseNotification>>;
-    fn read(&mut self, requests: &mut Vec<IField>) -> Result<()>;
+    fn read(&mut self, requests: &Vec<DatabaseField>) -> Result<()>;
     fn register_notification(&mut self, config: &NotificationConfig) -> Result<NotificationToken>;
     fn unregister_notification(&mut self, token: &NotificationToken) -> Result<()>;
-    fn write(&mut self, requests: &mut Vec<IField>) -> Result<()>;
+    fn write(&mut self, requests: &Vec<DatabaseField>) -> Result<()>;
+}
+
+type ClientRef = Rc<RefCell<dyn ClientTrait>>;
+pub struct Client(ClientRef);
+
+impl Client {
+    fn new(client: impl ClientTrait + 'static) -> Self {
+        Client(Rc::new(RefCell::new(client)))
+    }
+
+    fn clone(&self) -> Self {
+        Client(self.0.clone())
+    }
+
+    fn connect(&self) -> Result<()> {
+        self.0.borrow_mut().connect()
+    }
+
+    fn connected(&self) -> bool {
+        self.0.borrow().connected()
+    }
+
+    fn disconnect(&self) -> bool {
+        self.0.borrow_mut().disconnect()
+    }
+
+    fn get_entities(&self, entity_type: &str) -> Result<Vec<DatabaseEntity>> {
+        self.0.borrow_mut().get_entities(entity_type)
+    }
+
+    fn get_entity(&self, entity_id: &str) -> Result<DatabaseEntity> {
+        self.0.borrow_mut().get_entity(entity_id)
+    }
+
+    fn get_notifications(&self) -> Result<Vec<DatabaseNotification>> {
+        self.0.borrow_mut().get_notifications()
+    }
+
+    fn read(&self, requests: &Vec<DatabaseField>) -> Result<()> {
+        self.0.borrow_mut().read(requests)
+    }
+
+    fn register_notification(&self, config: &NotificationConfig) -> Result<NotificationToken> {
+        self.0.borrow_mut().register_notification(config)
+    }
+
+    fn unregister_notification(&self, token: &NotificationToken) -> Result<()> {
+        self.0.borrow_mut().unregister_notification(token)
+    }
+
+    fn write(&self, requests: &Vec<DatabaseField>) -> Result<()> {
+        self.0.borrow_mut().write(requests)
+    }
 }
 
 pub mod rest;
 
 pub trait DatabaseTrait {
-    fn connect(&mut self) -> Result<()>;
+    fn connect(&self) -> Result<()>;
     fn connected(&self) -> bool;
-    fn disconnect(&mut self) -> bool;
-    fn find(&mut self, entity_type: &str, field: &Vec<String>, predicate: fn(&HashMap<String, IField>) -> bool) -> Result<Vec<DatabaseEntity>>;
-    fn get_entity(&mut self, entity_id: &str) -> Result<DatabaseEntity>;
-    fn get_entities(&mut self, entity_type: &str) -> Result<Vec<DatabaseEntity>>;
-    fn read(&mut self, requests: &Vec<IField>) -> Result<()>;
-    fn write(&mut self, requests: &Vec<IField>) -> Result<()>;
-    fn clear_notifications(&mut self);
-    fn register_notification(&mut self, config: &NotificationConfig, callback: NotificationCallback) -> Result<NotificationToken>;
-    fn unregister_notification(&mut self, token: &NotificationToken) -> Result<()>;
-    fn process_notifications(&mut self) -> Result<()>;
+    fn disconnect(&self) -> bool;
+    fn find(&self, entity_type: &str, field: &Vec<String>, predicate: fn(&HashMap<String, DatabaseField>) -> bool) -> Result<Vec<DatabaseEntity>>;
+    fn get_entity(&self, entity_id: &str) -> Result<DatabaseEntity>;
+    fn get_entities(&self, entity_type: &str) -> Result<Vec<DatabaseEntity>>;
+    fn read(&self, requests: &Vec<DatabaseField>) -> Result<()>;
+    fn write(&self, requests: &Vec<DatabaseField>) -> Result<()>;
+    fn clear_notifications(&self);
+    fn register_notification(&self, config: &NotificationConfig, callback: NotificationCallback) -> Result<NotificationToken>;
+    fn unregister_notification(&self, token: &NotificationToken) -> Result<()>;
+    fn process_notifications(&self) -> Result<()>;
 }
 
-pub struct Database {
-    client: Box<dyn ClientTrait>,
-    notification_manager: Box<dyn NotificationManagerTrait>,
+pub struct _Database {
+    client: Client,
+    notification_manager: NotificationManager,
 }
+
+type DatabaseRef = Rc<RefCell<_Database>>;
+pub struct Database(DatabaseRef);
 
 impl Database {
-    pub fn new(client: Box<dyn ClientTrait>) -> Self {
-        Database {
+    pub fn new(client: Client) -> Self {
+        Database(Rc::new(RefCell::new(_Database::new(client))))
+    }
+
+    pub fn clone(&self) -> Self {
+        Database(self.0.clone())
+    }
+
+    pub fn connect(&self) -> Result<()> {
+        self.0.borrow().connect()
+    }
+
+    pub fn connected(&self) -> bool {
+        self.0.borrow().connected()
+    }
+
+    pub fn disconnect(&self) -> bool {
+        self.0.borrow().disconnect()
+    }
+
+    pub fn find(&self, entity_type: &str, field: &Vec<String>, predicate: fn(&HashMap<String, DatabaseField>) -> bool) -> Result<Vec<DatabaseEntity>> {
+        self.0.borrow().find(entity_type, field, predicate)
+    }
+
+    pub fn get_entity(&self, entity_id: &str) -> Result<DatabaseEntity> {
+        self.0.borrow().get_entity(entity_id)
+    }
+
+    pub fn get_entities(&self, entity_type: &str) -> Result<Vec<DatabaseEntity>> {
+        self.0.borrow().get_entities(entity_type)
+    }
+
+    pub fn read(&self, requests: &Vec<DatabaseField>) -> Result<()> {
+        self.0.borrow().read(requests)
+    }
+
+    pub fn write(&self, requests: &Vec<DatabaseField>) -> Result<()> {
+        self.0.borrow().write(requests)
+    }
+
+    pub fn clear_notifications(&self) {
+        self.0.borrow().clear_notifications();
+    }
+
+    pub fn register_notification(&self, config: &NotificationConfig, callback: NotificationCallback) -> Result<NotificationToken> {
+        self.0.borrow().register_notification(config, callback)
+    }
+
+    pub fn unregister_notification(&self, token: &NotificationToken) -> Result<()> {
+        self.0.borrow().unregister_notification(token)
+    }
+
+    pub fn process_notifications(&self) -> Result<()> {
+        self.0.borrow().process_notifications()
+    }
+}
+
+impl _Database {
+    pub fn new(client: Client) -> Self {
+        _Database {
             client,
-            notification_manager: Box::new(NotificationManager::new()),
+            notification_manager: NotificationManager::new(),
         }
     }
 }
 
-impl DatabaseTrait for Database {
-    fn clear_notifications(&mut self) {
+impl DatabaseTrait for _Database {
+    fn clear_notifications(&self) {
         self.notification_manager.clear();
     }
 
-    fn connect(&mut self) -> Result<()> {
+    fn connect(&self) -> Result<()> {
         return self.client.connect();
     }
 
@@ -587,19 +759,19 @@ impl DatabaseTrait for Database {
         self.client.connected()
     }
 
-    fn disconnect(&mut self) -> bool {
+    fn disconnect(&self) -> bool {
         self.client.disconnect()
     }
 
-    fn get_entity(&mut self, entity_id: &str) -> Result<DatabaseEntity> {
+    fn get_entity(&self, entity_id: &str) -> Result<DatabaseEntity> {
         self.client.get_entity(entity_id)
     }
 
-    fn get_entities(&mut self, entity_type: &str) -> Result<Vec<DatabaseEntity>> {
+    fn get_entities(&self, entity_type: &str) -> Result<Vec<DatabaseEntity>> {
         self.client.get_entities(entity_type)
     }
 
-    fn find(&mut self, entity_type: &str, fields: &Vec<String>, predicate: fn(&HashMap<String, IField>) -> bool) -> Result<Vec<DatabaseEntity>> {
+    fn find(&self, entity_type: &str, fields: &Vec<String>, predicate: fn(&HashMap<String, DatabaseField>) -> bool) -> Result<Vec<DatabaseEntity>> {
         let entities = self.get_entities(entity_type)?;
         let mut result = vec![];
 
@@ -607,8 +779,8 @@ impl DatabaseTrait for Database {
             let mut requests = vec![];
 
             for field in fields {
-                let field = DatabaseField::new(entity.entity_id.clone(), field.clone());
-                requests.push(IField::new(field));
+                let field = RawField::new(entity.entity_id.clone(), field.clone());
+                requests.push(DatabaseField::new(field));
             }
             
             self.read(&mut requests)?;
@@ -626,24 +798,24 @@ impl DatabaseTrait for Database {
         Ok(result)
     }
 
-    fn read(&mut self, requests: &Vec<IField>) -> Result<()> {
+    fn read(&self, requests: &Vec<DatabaseField>) -> Result<()> {
         self.client.read(requests)
     }
 
-    fn write(&mut self, requests: &Vec<IField>) -> Result<()> {
+    fn write(&self, requests: &Vec<DatabaseField>) -> Result<()> {
         self.client.write(requests)
     }
 
-    fn register_notification(&mut self, config: &NotificationConfig, callback: NotificationCallback) -> Result<NotificationToken> {
-        self.notification_manager.register(&mut *self.client, config, callback)
+    fn register_notification(&self, config: &NotificationConfig, callback: NotificationCallback) -> Result<NotificationToken> {
+        self.notification_manager.register(self.client.clone(), config, callback)
     }
 
-    fn unregister_notification(&mut self, token: &NotificationToken) -> Result<()> {
-        self.notification_manager.unregister(&mut *self.client, token)
+    fn unregister_notification(&self, token: &NotificationToken) -> Result<()> {
+        self.notification_manager.unregister(self.client.clone(), token)
     }
 
-    fn process_notifications(&mut self) -> Result<()> {
-        return self.notification_manager.process_notifications(&mut *self.client);
+    fn process_notifications(&self) -> Result<()> {
+        return self.notification_manager.process_notifications(self.client.clone());
     }
 }
 
@@ -774,35 +946,50 @@ impl LoggerTrait for ConsoleLogger {
     }
 }
 
-// pub struct DefaultLogger {
-//     loggers: Vec<Logger>,
-// }
+pub type LoggerRef = Rc<RefCell<dyn LoggerTrait>>;
+pub struct Logger(LoggerRef);
 
-// impl DefaultLogger {
-//     pub fn new() -> Self {
-//         DefaultLogger { loggers: vec![] }
-//     }
+impl Logger {
+    pub fn new(logger: impl LoggerTrait + 'static) -> Self {
+        Logger(Rc::new(RefCell::new(logger)))
+    }
 
-//     pub fn add_logger(&mut self, logger: Logger) {
-//         self.loggers.push(logger);
-//     }
-// }
+    pub fn clone(&self) -> Self {
+        Logger(self.0.clone())
+    }
 
-// impl LoggerTrait for DefaultLogger {
-//     fn log(&self, level: &LogLevel, message: &str) {
-//         for logger in &mut self.loggers {
-//             logger.log(level, message);
-//         }
-//     }
-// }
+    pub fn log(&self, level: &LogLevel, message: &str) {
+        self.0.borrow_mut().log(level, message);
+    }
+
+    pub fn trace(&self, message: &str) {
+        self.0.borrow_mut().trace(message);
+    }
+
+    pub fn debug(&self, message: &str) {
+        self.0.borrow_mut().debug(message);
+    }
+
+    pub fn info(&self, message: &str) {
+        self.0.borrow_mut().info(message);
+    }
+
+    pub fn warning(&self, message: &str) {
+        self.0.borrow_mut().warning(message);
+    }
+
+    pub fn error(&self, message: &str) {
+        self.0.borrow_mut().error(message);
+    }
+}
 
 pub trait ApplicationTrait {
     fn execute(&mut self, ctx: &mut ApplicationContext);
 }
 
 pub struct ApplicationContext {
-    pub database: Box<dyn DatabaseTrait>,
-    pub logger: Box<dyn LoggerTrait>,
+    pub database: Database,
+    pub logger: Logger,
     pub quit: bool,
 }
 

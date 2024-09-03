@@ -1,9 +1,11 @@
 use super::ClientTrait;
 use super::DatabaseEntity;
-use super::DatabaseField;
+use super::RawField;
 use super::DatabaseNotification;
-use super::DatabaseValue;
+use super::RawValue;
 use super::Error;
+use super::DatabaseField;
+use super::DatabaseValue;
 use super::NotificationConfig;
 use super::NotificationToken;
 use super::Result;
@@ -22,13 +24,13 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(url: &str) -> Self {
-        Client {
+    pub fn new(url: &str) -> super::Client {
+        super::Client::new(Client {
             auth_failure: false,
             endpoint_reachable: false,
             url: url.to_string(),
             request_template: Map::new(),
-        }
+        })
     }
 
     fn authenticate(&mut self) -> Result<()> {
@@ -59,7 +61,7 @@ impl Client {
             .unwrap_or(false)
     }
 
-    fn parse_database_field(&self, notification: &Value, prefix: &str) -> Result<DatabaseField> {
+    fn parse_database_field(&self, notification: &Value, prefix: &str) -> Result<RawField> {
         let entity_id = notification
             .pointer(&format!("{}/id", prefix))
             .and_then(|v| v.as_str())
@@ -98,9 +100,9 @@ impl Client {
                 .and_then(|v| v.as_object())
                 .unwrap_or(&Map::new()),
         )
-        .unwrap_or(DatabaseValue::Unspecified);
+        .unwrap_or(RawValue::Unspecified.into_value());
 
-        Ok(DatabaseField {
+        Ok(RawField {
             entity_id,
             name,
             write_time,
@@ -154,7 +156,7 @@ impl Client {
                         "Invalid response from server: value is not valid",
                     ))?
                     .to_string();
-                DatabaseValue::String(value)
+                RawValue::String(value)
             }
             "type.googleapis.com/qdb.Int" => {
                 let value = value
@@ -165,7 +167,7 @@ impl Client {
                     .ok_or(Error::from_client(
                         "Invalid response from server: value is not valid",
                     ))?;
-                DatabaseValue::Integer(value)
+                RawValue::Integer(value)
             }
             "type.googleapis.com/qdb.Float" => {
                 let value = value
@@ -174,7 +176,7 @@ impl Client {
                     .ok_or(Error::from_client(
                         "Invalid response from server: value is not valid",
                     ))?;
-                DatabaseValue::Float(value)
+                RawValue::Float(value)
             }
             "type.googleapis.com/qdb.Bool" => {
                 let value =
@@ -184,7 +186,7 @@ impl Client {
                         .ok_or(Error::from_client(
                             "Invalid response from server: value is not valid",
                         ))?;
-                DatabaseValue::Boolean(value)
+                RawValue::Boolean(value)
             }
             "type.googleapis.com/qdb.EntityReference" => {
                 let value = value
@@ -194,7 +196,7 @@ impl Client {
                         "Invalid response from server: value is not valid",
                     ))?
                     .to_string();
-                DatabaseValue::EntityReference(value)
+                RawValue::EntityReference(value)
             }
             "type.googleapis.com/qdb.Timestamp" => {
                 let value = value
@@ -204,7 +206,7 @@ impl Client {
                         "Invalid response from server: value is not valid",
                     ))?;
                 let timestamp = DateTime::parse_from_rfc3339(value)?.to_utc();
-                DatabaseValue::Timestamp(timestamp)
+                RawValue::Timestamp(timestamp)
             }
             "type.googleapis.com/qdb.ConnectionState" => {
                 let value = value
@@ -214,7 +216,7 @@ impl Client {
                         "Invalid response from server: value is not valid",
                     ))?
                     .to_string();
-                DatabaseValue::ConnectionState(value)
+                RawValue::ConnectionState(value)
             }
             "type.googleapis.com/qdb.GarageDoorState" => {
                 let value = value
@@ -224,7 +226,7 @@ impl Client {
                         "Invalid response from server: value is not valid",
                     ))?
                     .to_string();
-                DatabaseValue::GarageDoorState(value)
+                RawValue::GarageDoorState(value)
             }
             _ => {
                 return Err(Error::from_client(
@@ -233,7 +235,7 @@ impl Client {
             }
         };
 
-        Ok(value)
+        Ok(value.into_value())
     }
 }
 
@@ -356,7 +358,7 @@ impl ClientTrait for Client {
         Ok(result)
     }
 
-    fn read(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()> {
+    fn read(&mut self, requests: &Vec<DatabaseField>) -> Result<()> {
         let mut request = Map::new();
         request.insert(
             "@type".to_string(),
@@ -370,8 +372,8 @@ impl ClientTrait for Client {
                     .iter()
                     .map(|r| {
                         let mut request = Map::new();
-                        request.insert("id".to_string(), Value::String(r.entity_id.clone()));
-                        request.insert("field".to_string(), Value::String(r.name.clone()));
+                        request.insert("id".to_string(), Value::String(r.entity_id()));
+                        request.insert("field".to_string(), Value::String(r.name()));
                         Value::Object(request)
                     })
                     .collect(),
@@ -408,9 +410,9 @@ impl ClientTrait for Client {
                         .to_string();
 
                     let field = requests
-                        .iter_mut()
-                        .find(|r: &&mut DatabaseField| {
-                            r.entity_id == entity_id && r.name == field_name
+                        .iter()
+                        .find(|r: &&DatabaseField| {
+                            r.entity_id() == entity_id && r.name() == field_name
                         })
                         .ok_or(Error::from_client(
                             "Invalid response from server: Field not found",
@@ -454,9 +456,9 @@ impl ClientTrait for Client {
                         ))?
                         .to_string();
 
-                    field.value = Client::extract_value(value)?;
-                    field.write_time = DateTime::parse_from_rfc3339(write_time)?.to_utc();
-                    field.writer_id = writer_id;
+                    field.update_value(Client::extract_value(value)?);
+                    field.update_write_time(DateTime::parse_from_rfc3339(write_time)?.to_utc());
+                    field.update_writer_id(writer_id.as_str());
                 }
                 _ => {
                     return Err(Box::new(Error::ClientError(
@@ -469,7 +471,7 @@ impl ClientTrait for Client {
         Ok(())
     }
 
-    fn write(&mut self, requests: &mut Vec<DatabaseField>) -> Result<()> {
+    fn write(&mut self, requests: &Vec<DatabaseField>) -> Result<()> {
         let mut request = Map::new();
         request.insert(
             "@type".to_string(),
@@ -486,10 +488,10 @@ impl ClientTrait for Client {
                     .iter()
                     .map(|r| {
                         let mut request = Map::new();
-                        request.insert("id".to_string(), Value::String(r.entity_id.clone()));
-                        request.insert("field".to_string(), Value::String(r.name.clone()));
-                        let value = match &r.value {
-                            DatabaseValue::String(s) => {
+                        request.insert("id".to_string(), Value::String(r.entity_id()));
+                        request.insert("field".to_string(), Value::String(r.name()));
+                        let value = match &r.value().into_raw() {
+                            RawValue::String(s) => {
                                 let mut value = Map::new();
                                 value.insert(
                                     "@type".to_string(),
@@ -498,7 +500,7 @@ impl ClientTrait for Client {
                                 value.insert("raw".to_string(), Value::String(s.clone()));
                                 Value::Object(value)
                             }
-                            DatabaseValue::Integer(i) => {
+                            RawValue::Integer(i) => {
                                 let mut value = Map::new();
                                 value.insert(
                                     "@type".to_string(),
@@ -508,7 +510,7 @@ impl ClientTrait for Client {
                                 value.insert("raw".to_string(), Value::Number(n));
                                 Value::Object(value)
                             }
-                            DatabaseValue::Float(f) => {
+                            RawValue::Float(f) => {
                                 let mut value = Map::new();
                                 value.insert(
                                     "@type".to_string(),
@@ -518,7 +520,7 @@ impl ClientTrait for Client {
                                 value.insert("raw".to_string(), Value::Number(n));
                                 Value::Object(value)
                             }
-                            DatabaseValue::Boolean(b) => {
+                            RawValue::Boolean(b) => {
                                 let mut value = Map::new();
                                 value.insert(
                                     "@type".to_string(),
@@ -527,7 +529,7 @@ impl ClientTrait for Client {
                                 value.insert("raw".to_string(), Value::Bool(*b));
                                 Value::Object(value)
                             }
-                            DatabaseValue::EntityReference(e) => {
+                            RawValue::EntityReference(e) => {
                                 let mut value = Map::new();
                                 value.insert(
                                     "@type".to_string(),
@@ -538,7 +540,7 @@ impl ClientTrait for Client {
                                 value.insert("raw".to_string(), Value::String(e.clone()));
                                 Value::Object(value)
                             }
-                            DatabaseValue::Timestamp(t) => {
+                            RawValue::Timestamp(t) => {
                                 let mut value = Map::new();
                                 value.insert(
                                     "@type".to_string(),
@@ -558,7 +560,7 @@ impl ClientTrait for Client {
                                 value.insert("raw".to_string(), Value::Object(raw));
                                 Value::Object(value)
                             }
-                            DatabaseValue::ConnectionState(c) => {
+                            RawValue::ConnectionState(c) => {
                                 let mut value = Map::new();
                                 value.insert(
                                     "@type".to_string(),
@@ -569,7 +571,7 @@ impl ClientTrait for Client {
                                 value.insert("raw".to_string(), Value::String(c.clone()));
                                 Value::Object(value)
                             }
-                            DatabaseValue::GarageDoorState(g) => {
+                            RawValue::GarageDoorState(g) => {
                                 let mut value = Map::new();
                                 value.insert(
                                     "@type".to_string(),
@@ -699,7 +701,7 @@ impl ClientTrait for Client {
                 })?
                 .iter()
                 .map(|v| self.parse_database_field(v, ""))
-                .collect::<Result<Vec<DatabaseField>>>()?;
+                .collect::<Result<Vec<RawField>>>()?;
 
             result.push(DatabaseNotification {
                 token,
