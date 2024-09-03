@@ -25,7 +25,7 @@ fn main() {
     let mut ctx = qdb::ApplicationContext{
         database: qdb::Database::new(qdb::rest::Client::new("http://localhost:20000")),
         logger: qdb::Logger::new(qdb::ConsoleLogger::new(qdb::LogLevel::Debug)),
-        quit: false,
+        quit: qdb::BoolFlag::new(),
     };
 
     let mut db_worker = qdb::DatabaseWorker::new();

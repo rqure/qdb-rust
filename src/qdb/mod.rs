@@ -987,10 +987,27 @@ pub trait ApplicationTrait {
     fn execute(&mut self, ctx: &mut ApplicationContext);
 }
 
+type _QuitFlag = Rc<RefCell<bool>>;
+pub struct BoolFlag(_QuitFlag);
+
+impl BoolFlag {
+    pub fn new() -> Self {
+        BoolFlag(Rc::new(RefCell::new(false)))
+    }
+
+    pub fn set(&self, value: bool) {
+        *self.0.borrow_mut() = value;
+    }
+
+    pub fn get(&self) -> bool {
+        *self.0.borrow()
+    }
+}
+
 pub struct ApplicationContext {
     pub database: Database,
     pub logger: Logger,
-    pub quit: bool,
+    pub quit: BoolFlag,
 }
 
 pub trait WorkerTrait {
@@ -1049,7 +1066,7 @@ impl WorkerTrait for Application {
                 }
             }
 
-            if !ctx.quit {
+            if !ctx.quit.get() {
                 let loop_time = std::time::Duration::from_millis(self.loop_interval_ms);
                 let elapsed_time = start.elapsed();
                 
@@ -1059,7 +1076,7 @@ impl WorkerTrait for Application {
                 }
             }
 
-            !ctx.quit
+            !ctx.quit.get()
         } {}
 
         Ok(())
