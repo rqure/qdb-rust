@@ -225,10 +225,11 @@ impl From<&str> for NotificationToken {
     }
 }
 
+
 pub struct NotificationCallback(Box<dyn FnMut(&DatabaseNotification) -> Result<()>>);
 
 impl NotificationCallback {
-    pub fn new(callback: impl FnMut(&DatabaseNotification) -> Result<()> + 'static) -> Self {
+    pub fn new<'a>(callback: impl FnMut(&DatabaseNotification) -> Result<()> + 'a) -> Self {
         NotificationCallback(Box::new(callback))
     }
 }

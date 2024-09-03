@@ -15,7 +15,7 @@ fn on_connected(args: &mut ApplicationContext) {
         field: "CurrentTime".to_string(),
         notify_on_change: true,
         context: vec![],
-    }, NotificationCallback::new(move |n| on_current_time_changed(n, args.database.clone()))).unwrap();
+    }, NotificationCallback::new(|n| on_current_time_changed(n, args.database.clone()))).unwrap();
 }
 
 fn on_disconnected(args: &mut ApplicationContext) {
