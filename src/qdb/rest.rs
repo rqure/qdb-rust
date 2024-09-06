@@ -14,7 +14,7 @@ use ureq::serde_json::Map;
 use ureq::serde_json::Number;
 use ureq::serde_json::Value;
 
-use chrono::{prelude, DateTime, Utc};
+use chrono::{DateTime, Utc};
 
 pub struct Client {
     auth_failure: bool,
