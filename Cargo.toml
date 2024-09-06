@@ -2,6 +2,8 @@
 name = "qdb"
 version = "0.1.0"
 edition = "2021"
+description = "Library for interacting with QDB"
+license = "MIT OR Apache-2.0"
 
 [lib]
 name = "qdb"
