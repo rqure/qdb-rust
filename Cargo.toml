@@ -1,7 +1,11 @@
 [package]
-name = "qdb-rust-experiment"
+name = "qdb"
 version = "0.1.0"
 edition = "2021"
+
+[lib]
+name = "qdb"
+path = "src/lib.rs"
 
 [dependencies]
 chrono = "0.4.38"
