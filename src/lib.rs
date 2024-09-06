@@ -1141,19 +1141,29 @@ pub struct DatabaseWorkerSignals {
 }
 
 pub struct DatabaseWorker {
-    connected: bool,
+    is_db_connected: bool,
+    is_nw_connected: bool,
     pub signals: DatabaseWorkerSignals,
 }
 
 impl DatabaseWorker {
     pub fn new() -> Self {
         Self {
-            connected: false,
+            is_db_connected: false,
+            is_nw_connected: false,
             signals: DatabaseWorkerSignals {
                 connected: Signal::new(),
                 disconnected: Signal::new(),
             },
         }
+    }
+
+    pub fn on_network_connection_established(&mut self, _: ()) {
+        self.is_nw_connected = true;
+    }
+
+    pub fn on_network_connection_lost(&mut self, _: ()) {
+        self.is_nw_connected = false;
     }
 }
 
@@ -1164,10 +1174,19 @@ impl WorkerTrait for DatabaseWorker {
     }
 
     fn do_work(&mut self, ctx: ApplicationContext) -> Result<()> {
+        if !self.is_nw_connected {
+            if self.is_db_connected {
+                ctx.logger().log(&LogLevel::Warning, "[qdb::DatabaseWorker::do_work] Network connection loss has disrupted database connection");
+                self.is_db_connected = false;
+            }
+
+            return Ok(());
+        }
+
         if !ctx.database().connected() {
-            if self.connected {
+            if self.is_db_connected {
                 ctx.logger().log(&LogLevel::Warning, "[qdb::DatabaseWorker::do_work] Disconnected from database");
-                self.connected = false;
+                self.is_db_connected = false;
                 ctx.database().clear_notifications();
                 self.signals.disconnected.emit(ctx.clone());
             }
@@ -1178,7 +1197,7 @@ impl WorkerTrait for DatabaseWorker {
             ctx.database().connect()?;
 
             if ctx.database().connected() {
-                self.connected = true;
+                self.is_db_connected = true;
                 ctx.logger().log(&LogLevel::Info, "[qdb::DatabaseWorker::do_work] Connected to the database");
                 self.signals.connected.emit(ctx.clone());
             }
