@@ -1,1 +1,3 @@
-mod qdb;
+pub fn test() {
+    println!("Test");
+}
