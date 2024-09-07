@@ -5,7 +5,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Debug;
-use std::fmt::Result;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -1143,6 +1142,7 @@ pub struct DatabaseWorker {
     is_db_connected: bool,
     is_nw_connected: bool,
     pub signals: DatabaseWorkerSignals,
+    network_connection_events: Option<Receiver<bool>>,
 }
 
 impl DatabaseWorker {
@@ -1154,15 +1154,8 @@ impl DatabaseWorker {
                 connected: Signal::new(),
                 disconnected: Signal::new(),
             },
+            network_connection_events: None,
         }
-    }
-
-    pub fn on_network_connection_established(&mut self, _: ()) {
-        self.is_nw_connected = true;
-    }
-
-    pub fn on_network_connection_lost(&mut self, _: ()) {
-        self.is_nw_connected = false;
     }
 }
 
@@ -1211,6 +1204,16 @@ impl WorkerTrait for DatabaseWorker {
 
     fn deinitialize(&mut self, ctx: ApplicationContext) -> Result<()> {
         ctx.logger().log(&LogLevel::Info, "[qdb::DatabaseWorker::deinitialize] Deinitializing database worker");
+        Ok(())
+    }
+
+    fn process_events(&mut self) -> Result<()> {
+        if let Some(receiver) = &self.network_connection_events {
+            while let Ok(connected) = receiver.try_recv() {
+                self.is_nw_connected = connected;
+            }
+        }
+
         Ok(())
     }
 }
