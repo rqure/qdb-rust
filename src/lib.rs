@@ -5,8 +5,10 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Debug;
+use std::fmt::Result;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Instant;
 
 #[derive(Debug)]
@@ -803,65 +805,38 @@ impl _Database {
     }
 }
 
-pub trait SlotTrait<T> {
-    fn call(&mut self, args: &T);
-}
-
-pub struct Slot<F> {
-    callback: F,
-}
-
-impl<F> Slot<F> {
-    pub fn new(callback: F) -> Self {
-        Slot { callback }
-    }
-
-    pub fn call<T>(&mut self, args: &T)
-    where
-        F: FnMut(&T),
-    {
-        (self.callback)(args);
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SlotToken(usize);
 
-pub trait SignalTrait<F: FnMut(&T), T> {
-    fn connect(&mut self, slot: Slot<F>) -> SlotToken;
-    fn disconnect(&mut self, token: &SlotToken);
-    fn emit(&mut self, args: T);
-}
-
-pub struct Signal<F: FnMut(&T), T> {
-    slots: HashMap<SlotToken, Slot<F>>,
+pub struct Signal<T> {
+    senders: HashMap<SlotToken, Sender<T>>,
     args: std::marker::PhantomData<T>,
 }
 
-impl<F: FnMut(&T), T> Signal<F, T> {
+impl<T> Signal<T> {
     pub fn new() -> Self {
         Signal {
-            slots: HashMap::new(),
+            senders: HashMap::new(),
             args: std::marker::PhantomData,
         }
     }
 }
 
-impl<F: FnMut(&T), T> SignalTrait<F, T> for Signal<F, T> {
-    fn connect(&mut self, slot: Slot<F>) -> SlotToken {
+impl<T: Clone> Signal<T> {
+    fn connect(&mut self, sender: Sender<T>) -> SlotToken {
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
         let id = SlotToken(COUNTER.fetch_add(1, Ordering::Relaxed));
-        self.slots.insert(id, slot);
+        self.senders.insert(id, sender);
         id
     }
 
     fn disconnect(&mut self, id: &SlotToken) {
-        self.slots.remove(id);
+        self.senders.remove(id);
     }
 
     fn emit(&mut self, args: T) {
-        for (_, slot) in self.slots.iter_mut() {
-            slot.call(&args);
+        for (_, sender) in self.senders.iter() {        
+            sender.send(args.clone()).expect("Failed to send signal");
         }
     }
 }
@@ -971,16 +946,12 @@ pub trait ApplicationTrait {
     fn execute(&mut self);
 }
 
-type _QuitFlag = Rc<RefCell<bool>>;
-pub struct BoolFlag(_QuitFlag);
+type _BoolFlag = Rc<RefCell<bool>>;
+pub struct BoolFlag(_BoolFlag);
 
 impl BoolFlag {
     pub fn new() -> Self {
         BoolFlag(Rc::new(RefCell::new(false)))
-    }
-
-    pub fn clone(&self) -> Self {
-        BoolFlag(self.0.clone())
     }
 
     pub fn set(&self, value: bool) {
@@ -989,6 +960,12 @@ impl BoolFlag {
 
     pub fn get(&self) -> bool {
         *self.0.borrow()
+    }
+}
+
+impl Clone for BoolFlag {
+    fn clone(&self) -> Self {
+        BoolFlag(self.0.clone())
     }
 }
 
@@ -1010,10 +987,6 @@ impl ApplicationContext {
         })))
     }
 
-    pub fn clone(&self) -> Self {
-        ApplicationContext(self.0.clone())
-    }
-
     pub fn database(&self) -> Database {
         self.0.borrow().database.clone()
     }
@@ -1025,12 +998,19 @@ impl ApplicationContext {
     pub fn quit(&self) -> BoolFlag {
         self.0.borrow().quit.clone()
     }
-}   
+}
+
+impl Clone for ApplicationContext {
+    fn clone(&self) -> Self {
+        ApplicationContext(self.0.clone())
+    }
+}
 
 pub trait WorkerTrait {
     fn intialize(&mut self, ctx: ApplicationContext) -> Result<()>;
     fn do_work(&mut self, ctx: ApplicationContext) -> Result<()>;
     fn deinitialize(&mut self, ctx: ApplicationContext) -> Result<()>;
+    fn process_events(&mut self) -> Result<()>;
 }
 
 pub struct Application {
@@ -1073,9 +1053,12 @@ impl WorkerTrait for Application {
         while {
             let start = Instant::now();
 
-            for worker in &mut self.workers {
+            for i in 0..self.workers.len() {
+                let worker = &mut self.workers[i];
                 match worker.do_work(ctx.clone()) {
-                    Ok(_) => {}
+                    Ok(_) => {
+                        self.process_events();
+                    }
                     Err(e) => {
                         ctx.logger().error(&format!(
                             "[qdb::Application::do_work] Error while executing worker: {}",
@@ -1084,7 +1067,7 @@ impl WorkerTrait for Application {
                     }
                 }
             }
-
+            
             if !ctx.quit().get() {
                 let loop_time = std::time::Duration::from_millis(self.loop_interval_ms);
                 let elapsed_time = start.elapsed();
@@ -1119,6 +1102,22 @@ impl WorkerTrait for Application {
         ctx.logger().log(&LogLevel::Info, "[qdb::Application::deinitialize] Shutting down now");
         Ok(())
     }
+
+    fn process_events(&mut self) -> Result<()> {
+        for worker in &mut self.workers {
+            match worker.process_events() {
+                Ok(_) => {}
+                Err(e) => {
+                    self.ctx.logger().error(&format!(
+                        "[qdb::Application::process_events] Error while processing events: {}",
+                        e
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl ApplicationTrait for Application {
@@ -1136,8 +1135,8 @@ impl Application {
 }
 
 pub struct DatabaseWorkerSignals {
-    pub connected: Signal<fn(&ApplicationContext), ApplicationContext>,
-    pub disconnected: Signal<fn(&ApplicationContext), ApplicationContext>,
+    pub connected: Signal<ApplicationContext>,
+    pub disconnected: Signal<ApplicationContext>,
 }
 
 pub struct DatabaseWorker {
@@ -1193,7 +1192,7 @@ impl WorkerTrait for DatabaseWorker {
 
             ctx.logger().log(&LogLevel::Debug, "[qdb::DatabaseWorker::do_work] Attempting to connect to the database...");
             
-            ctx.database().disconnect();
+            ctx.database().disconnect();   
             ctx.database().connect()?;
 
             if ctx.database().connected() {
