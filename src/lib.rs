@@ -832,11 +832,17 @@ impl<T: Clone> Signal<T> {
     fn disconnect(&mut self, id: &SlotToken) {
         self.senders.remove(id);
     }
+    
+    fn new_receiver(&mut self) -> Receiver<T> {
+        let (sender, receiver) = channel();
+        self.connect(sender);
+        receiver
+    }
 
     fn emit(&mut self, args: T) {
-        for (_, sender) in self.senders.iter() {        
-            sender.send(args.clone()).expect("Failed to send signal");
-        }
+        self.senders.retain(|_, sender| {
+            sender.send(args.clone()).is_ok()
+        });
     }
 }
 
@@ -1055,12 +1061,20 @@ impl WorkerTrait for Application {
             for i in 0..self.workers.len() {
                 let worker = &mut self.workers[i];
                 match worker.do_work(ctx.clone()) {
-                    Ok(_) => {
-                        self.process_events();
-                    }
+                    Ok(_) => {}
                     Err(e) => {
                         ctx.logger().error(&format!(
                             "[qdb::Application::do_work] Error while executing worker: {}",
+                            e
+                        ));
+                    }
+                }
+
+                match self.process_events() {
+                    Ok(_) => {}
+                    Err(e) => {
+                        ctx.logger().error(&format!(
+                            "[qdb::Application::do_work] Error while processing events: {}",
                             e
                         ));
                     }
@@ -1142,7 +1156,7 @@ pub struct DatabaseWorker {
     is_db_connected: bool,
     is_nw_connected: bool,
     pub signals: DatabaseWorkerSignals,
-    network_connection_events: Option<Receiver<bool>>,
+    pub network_connection_events: Option<Receiver<bool>>,
 }
 
 impl DatabaseWorker {
