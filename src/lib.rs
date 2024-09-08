@@ -62,13 +62,15 @@ pub type FieldRef = Rc<RefCell<RawField>>;
 
 pub struct DatabaseField(FieldRef);
 
+impl Clone for DatabaseField {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
 impl DatabaseField {
     pub fn new(field: RawField) -> Self {
-        DatabaseField(Rc::new(RefCell::new(field)))
-    }
-
-    pub fn clone(&self) -> Self {
-        DatabaseField(self.0.clone())
+        Self(Rc::new(RefCell::new(field)))
     }
 
     pub fn into_raw(self) -> RawField {
@@ -189,6 +191,7 @@ impl RawField {
     }
 }
 
+#[derive(Clone)]
 pub struct DatabaseNotification {
     pub token: String,
     pub current: DatabaseField,
@@ -226,19 +229,10 @@ impl From<&str> for NotificationToken {
     }
 }
 
-
-pub struct NotificationCallback(Box<dyn FnMut(&DatabaseNotification) -> Result<()>>);
-
-impl NotificationCallback {
-    pub fn new(callback: impl FnMut(&DatabaseNotification) -> Result<()> + 'static) -> Self {
-        NotificationCallback(Box::new(callback))
-    }
-}
-
 pub struct _NotificationManager {
     registered_config: HashSet<NotificationConfig>,
     config_to_token: HashMap<NotificationConfig, NotificationToken>,
-    token_to_callback_list: HashMap<NotificationToken, Vec<NotificationCallback>>
+    token_to_callback_list: HashMap<NotificationToken, EventEmitter<DatabaseNotification>>
 }
 
 type NotificationManagerRef = Rc<RefCell<_NotificationManager>>;
@@ -257,8 +251,8 @@ impl NotificationManager {
         self.0.borrow_mut().clear();
     }
 
-    pub fn register(&self, client: Client, config: &NotificationConfig, callback: NotificationCallback) -> Result<NotificationToken> {
-        self.0.borrow_mut().register(client, config, callback)
+    pub fn register(&self, client: Client, config: &NotificationConfig) -> Result<Receiver<DatabaseNotification>> {
+        self.0.borrow_mut().register(client, config)
     }
 
     pub fn unregister(&self, client: Client, token: &NotificationToken) -> Result<()> {
@@ -287,25 +281,29 @@ impl _NotificationManager {
         self.token_to_callback_list.clear();
     }
 
-    fn register(&mut self, client: Client, config: &NotificationConfig, callback: NotificationCallback) -> Result<NotificationToken> {
+    fn register(&mut self, client: Client, config: &NotificationConfig) -> Result<Receiver<DatabaseNotification>> {
         if self.registered_config.contains(&config) {
             let token = self.config_to_token.get(config)
                 .ok_or(Error::from_notification("Inconsistent notification state during registration"))?;
             
-            self.token_to_callback_list.get_mut(token)
+            let receiver = self.token_to_callback_list.get_mut(token)
                 .ok_or(Error::from_notification("Inconsistent notification state during registration"))?
-                .push(callback);
+                .new_receiver();
 
-            return Ok(token.clone());
+            return Ok(receiver);
         }
 
         let token = client.register_notification(config)?;
         
         self.registered_config.insert(config.clone());
         self.config_to_token.insert(config.clone(), token.clone());
-        self.token_to_callback_list.insert(token.clone(), vec![callback]);
+        self.token_to_callback_list.insert(token.clone(), EventEmitter::new());
 
-        Ok(token)
+        let receiver = self.token_to_callback_list.get_mut(&token)
+            .ok_or(Error::from_notification("Inconsistent notification state during registration"))?
+            .new_receiver();
+
+        Ok(receiver)
     }
 
     fn unregister(&mut self, client: Client, token: &NotificationToken) -> Result<()> {
@@ -327,12 +325,9 @@ impl _NotificationManager {
 
         for notification in &notifications {
             let token = NotificationToken(notification.token.clone());
-            let callbacks = self.token_to_callback_list.get_mut(&token)
+            let emitter = self.token_to_callback_list.get_mut(&token)
                 .ok_or(Error::from_notification("Cannot process notification: Callback list doesn't exist for token"))?;
-
-            for callback in callbacks {
-                callback.0(&notification)?;
-            }
+            emitter.emit(notification.clone());
         }
 
         Ok(())
@@ -709,8 +704,8 @@ impl Database {
         self.0.borrow().clear_notifications();
     }
 
-    pub fn register_notification(&self, config: &NotificationConfig, callback: NotificationCallback) -> Result<NotificationToken> {
-        self.0.borrow().register_notification(config, callback)
+    pub fn register_notification(&self, config: &NotificationConfig) -> Result<Receiver<DatabaseNotification>> {
+        self.0.borrow().register_notification(config)
     }
 
     pub fn unregister_notification(&self, token: &NotificationToken) -> Result<()> {
@@ -791,8 +786,8 @@ impl _Database {
         self.client.write(requests)
     }
 
-    fn register_notification(&self, config: &NotificationConfig, callback: NotificationCallback) -> Result<NotificationToken> {
-        self.notification_manager.register(self.client.clone(), config, callback)
+    fn register_notification(&self, config: &NotificationConfig) -> Result<Receiver<DatabaseNotification>> {
+        self.notification_manager.register(self.client.clone(), config)
     }
 
     fn unregister_notification(&self, token: &NotificationToken) -> Result<()> {
@@ -807,39 +802,39 @@ impl _Database {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SlotToken(usize);
 
-pub struct Signal<T> {
+pub struct EventEmitter<T> {
     senders: HashMap<SlotToken, Sender<T>>,
     args: std::marker::PhantomData<T>,
 }
 
-impl<T> Signal<T> {
+impl<T> EventEmitter<T> {
     pub fn new() -> Self {
-        Signal {
+        EventEmitter {
             senders: HashMap::new(),
             args: std::marker::PhantomData,
         }
     }
 }
 
-impl<T: Clone> Signal<T> {
-    fn connect(&mut self, sender: Sender<T>) -> SlotToken {
+impl<T: Clone> EventEmitter<T> {
+    pub fn connect(&mut self, sender: Sender<T>) -> SlotToken {
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
         let id = SlotToken(COUNTER.fetch_add(1, Ordering::Relaxed));
         self.senders.insert(id, sender);
         id
     }
 
-    fn disconnect(&mut self, id: &SlotToken) {
+    pub fn disconnect(&mut self, id: &SlotToken) {
         self.senders.remove(id);
     }
     
-    fn new_receiver(&mut self) -> Receiver<T> {
+    pub fn new_receiver(&mut self) -> Receiver<T> {
         let (sender, receiver) = channel();
         self.connect(sender);
         receiver
     }
 
-    fn emit(&mut self, args: T) {
+    pub fn emit(&mut self, args: T) {
         self.senders.retain(|_, sender| {
             sender.send(args.clone()).is_ok()
         });
@@ -1147,15 +1142,14 @@ impl Application {
     }
 }
 
-pub struct DatabaseWorkerSignals {
-    pub connected: Signal<ApplicationContext>,
-    pub disconnected: Signal<ApplicationContext>,
+pub struct DatabaseWorkerEventEmitters {
+    pub connection_status: EventEmitter<bool>,
 }
 
 pub struct DatabaseWorker {
     is_db_connected: bool,
     is_nw_connected: bool,
-    pub signals: DatabaseWorkerSignals,
+    pub emitters: DatabaseWorkerEventEmitters,
     pub network_connection_events: Option<Receiver<bool>>,
 }
 
@@ -1164,9 +1158,8 @@ impl DatabaseWorker {
         Self {
             is_db_connected: false,
             is_nw_connected: false,
-            signals: DatabaseWorkerSignals {
-                connected: Signal::new(),
-                disconnected: Signal::new(),
+            emitters: DatabaseWorkerEventEmitters {
+                connection_status: EventEmitter::new(),
             },
             network_connection_events: None,
         }
@@ -1184,6 +1177,7 @@ impl WorkerTrait for DatabaseWorker {
             if self.is_db_connected {
                 ctx.logger().log(&LogLevel::Warning, "[qdb::DatabaseWorker::do_work] Network connection loss has disrupted database connection");
                 self.is_db_connected = false;
+                self.emitters.connection_status.emit(self.is_db_connected);
             }
 
             return Ok(());
@@ -1192,9 +1186,9 @@ impl WorkerTrait for DatabaseWorker {
         if !ctx.database().connected() {
             if self.is_db_connected {
                 ctx.logger().log(&LogLevel::Warning, "[qdb::DatabaseWorker::do_work] Disconnected from database");
-                self.is_db_connected = false;
                 ctx.database().clear_notifications();
-                self.signals.disconnected.emit(ctx.clone());
+                self.is_db_connected = false;
+                self.emitters.connection_status.emit(self.is_db_connected);
             }
 
             ctx.logger().log(&LogLevel::Debug, "[qdb::DatabaseWorker::do_work] Attempting to connect to the database...");
@@ -1203,9 +1197,9 @@ impl WorkerTrait for DatabaseWorker {
             ctx.database().connect()?;
 
             if ctx.database().connected() {
-                self.is_db_connected = true;
                 ctx.logger().log(&LogLevel::Info, "[qdb::DatabaseWorker::do_work] Connected to the database");
-                self.signals.connected.emit(ctx.clone());
+                self.is_db_connected = true;
+                self.emitters.connection_status.emit(self.is_db_connected);
             }
 
             return Ok(())
