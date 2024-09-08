@@ -177,7 +177,7 @@ dependencies = [
 
 [[package]]
 name = "qdb"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "chrono",
  "ureq",
