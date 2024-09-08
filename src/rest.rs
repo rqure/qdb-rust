@@ -10,22 +10,29 @@ use super::NotificationConfig;
 use super::NotificationToken;
 use super::Result;
 
-use ureq::serde_json::Map;
-use ureq::serde_json::Number;
-use ureq::serde_json::Value;
+use serde_json::Map;
+use serde_json::Number;
+use serde_json::Value;
 
 use chrono::{DateTime, Utc};
+
+pub trait Pipe {
+    fn post(&self, url: &str, payload: &str) -> Result<String>;
+    fn get(&self, url: &str) -> Result<String>;
+}
 
 pub struct Client {
     auth_failure: bool,
     endpoint_reachable: bool,
     request_template: Map<String, Value>,
     url: String,
+    pipe: Box<dyn Pipe>,
 }
 
 impl Client {
-    pub fn new(url: &str) -> super::Client {
+    pub fn new(url: &str, pipe: Box<dyn Pipe>) -> super::Client {
         super::Client::new(Client {
+            pipe,
             auth_failure: false,
             endpoint_reachable: false,
             url: url.to_string(),
@@ -34,11 +41,10 @@ impl Client {
     }
 
     fn authenticate(&mut self) -> Result<()> {
-        let response = ureq::get(format!("{}/make-client-id", self.url).as_str())
-            .call()
-            .map_err(|e| Box::new(e))?
-            .into_json()
-            .map_err(|e| Box::new(e))?;
+        let response = serde_json::from_str(
+            self.pipe
+                .get(format!("{}/make-client-id", self.url).as_str())?
+                .as_str())?;
 
         match response {
             Value::Object(client_id) => {
@@ -118,11 +124,10 @@ impl Client {
         let mut request = self.request_template.clone();
         request.insert("payload".to_string(), Value::Object(payload.clone()));
 
-        let response = ureq::post(&url)
-            .send_json(Value::Object(request.clone()))
-            .map_err(|e| Box::new(e))?
-            .into_json()
-            .map_err(|e| Box::new(e))?;
+        let response = serde_json::from_str(
+            self.pipe
+                .post(url.as_str(), serde_json::to_string(&request)?.as_str())?
+                .as_str())?;
 
         if !self.has_authenticated(&response) {
             self.auth_failure = true;
