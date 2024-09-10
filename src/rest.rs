@@ -282,21 +282,21 @@ impl ClientTrait for Client {
             ))?;
 
         Ok(DatabaseEntity {
-            entity_id: entity
+            id: entity
                 .get("id")
                 .and_then(|v| v.as_str())
                 .ok_or(Error::from_client(
                     "Invalid response from server: entity id is not valid",
                 ))?
                 .to_string(),
-            entity_type: entity
+            type_name: entity
                 .get("type")
                 .and_then(|v| v.as_str())
                 .ok_or(Error::from_client(
                     "Invalid response from server: entity type is not valid",
                 ))?
                 .to_string(),
-            entity_name: entity
+            name: entity
                 .get("name")
                 .and_then(|v| v.as_str())
                 .ok_or(Error::from_client(
@@ -330,21 +330,21 @@ impl ClientTrait for Client {
         for entity in entities {
             match entity {
                 Value::Object(entity) => result.push(DatabaseEntity {
-                    entity_id: entity
+                    id: entity
                         .get("id")
                         .and_then(|v| v.as_str())
                         .ok_or(Error::from_client(
                             "Invalid response from server: entity id is not valid",
                         ))?
                         .to_string(),
-                    entity_type: entity
+                    type_name: entity
                         .get("type")
                         .and_then(|v| v.as_str())
                         .ok_or(Error::from_client(
                             "Invalid response from server: entity type is not valid",
                         ))?
                         .to_string(),
-                    entity_name: entity
+                    name: entity
                         .get("name")
                         .and_then(|v| v.as_str())
                         .ok_or(Error::from_client(

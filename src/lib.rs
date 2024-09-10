@@ -53,9 +53,47 @@ impl std::error::Error for Error {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DatabaseEntity {
-    pub entity_id: String,
-    pub entity_type: String,
-    pub entity_name: String,
+    id: String,
+    type_name: String,
+    name: String,
+}
+
+impl DatabaseEntity {
+    pub fn new(id: &str, type_name: &str, name: &str) -> Self {
+        DatabaseEntity {
+            id: id.into(),
+            type_name: type_name.into(),
+            name: name.into(),
+        }
+    }
+
+    pub fn id(&self) -> String {
+        self.id.clone()
+    }
+
+    pub fn type_name(&self) -> String {
+        self.type_name.clone()
+    }
+
+    pub fn name(&self) -> String {
+        self.name.clone()
+    }
+
+    pub fn update_id(&mut self, id: &str) {
+        self.id = id.into();
+    }
+
+    pub fn update_type_name(&mut self, type_name: &str) {
+        self.type_name = type_name.into();
+    }
+
+    pub fn update_name(&mut self, name: &str) {
+        self.name = name.into();
+    }
+
+    pub fn field(&self, name: &str) -> DatabaseField {
+        DatabaseField::new(RawField::new(self.id(), name))
+    }
 }
 
 pub type FieldRef = Rc<RefCell<RawField>>;
@@ -123,6 +161,60 @@ impl DatabaseField {
     pub fn update_name(&self, name: &str) {
         self.0.borrow_mut().update_name(name);
     }
+
+    pub fn set_str_value(&self, value: String) -> &Self {
+        self.0.borrow_mut().update_value(DatabaseValue::new(RawValue::String(value)));
+        self
+    }
+
+    pub fn set_i64_value(&self, value: i64) -> &Self {
+        self.0.borrow_mut().update_value(DatabaseValue::new(RawValue::Integer(value)));
+        self
+    }
+
+    pub fn set_f64_value(&self, value: f64) -> &Self {
+        self.0.borrow_mut().update_value(DatabaseValue::new(RawValue::Float(value)));
+        self
+    }
+
+    pub fn set_bool_value(&self, value: bool) -> &Self {
+        self.0.borrow_mut().update_value(DatabaseValue::new(RawValue::Boolean(value)));
+        self
+    }
+
+    pub fn set_entity_reference_value(&self, value: String) -> &Self {
+        self.0
+            .borrow_mut()
+            .update_value(DatabaseValue::new(RawValue::EntityReference(value)));
+        self
+    }
+
+    pub fn set_timestamp_value(&self, value: DateTime<Utc>) -> &Self {
+        self.0
+            .borrow_mut()
+            .update_value(DatabaseValue::new(RawValue::Timestamp(value)));
+        self
+    }
+
+    pub fn set_connection_state_value(&self, value: String) -> &Self {
+        self.0
+            .borrow_mut()
+            .update_value(DatabaseValue::new(RawValue::ConnectionState(value)));
+        self
+    }
+
+    pub fn set_garage_door_state_value(&self, value: String) -> &Self {
+        self.0
+            .borrow_mut()
+            .update_value(DatabaseValue::new(RawValue::GarageDoorState(value)));
+        self
+    }
+
+    pub fn set_unspecified_value(&self) -> &Self {
+        self.0.borrow_mut().update_value(DatabaseValue::new(RawValue::Unspecified));
+        self
+    }
+
 }
 
 pub struct RawField {
@@ -134,53 +226,65 @@ pub struct RawField {
 }
 
 impl RawField {
-    fn entity_id(&self) -> String {
+    pub fn entity_id(&self) -> String {
         self.entity_id.clone()
     }
 
-    fn name(&self) -> String {
+    pub fn name(&self) -> String {
         self.name.clone()
     }
 
-    fn value(&self) -> DatabaseValue {
+    pub fn value(&self) -> DatabaseValue {
         self.value.clone()
     }
 
-    fn write_time(&self) -> DateTime<Utc> {
+    pub fn write_time(&self) -> DateTime<Utc> {
         self.write_time
     }
 
-    fn writer_id(&self) -> String {
+    pub fn writer_id(&self) -> String {
         self.writer_id.clone()
     }
 
-    fn update_entity_id(&mut self, entity_id: &str) {
+    pub fn update_entity_id(&mut self, entity_id: &str) {
         self.entity_id = entity_id.into();
     }
 
-    fn update_value(&mut self, value: DatabaseValue) {
+    pub fn update_value(&mut self, value: DatabaseValue) {
         self.value = value;
     }
 
-    fn update_write_time(&mut self, write_time: DateTime<Utc>) {
+    pub fn update_write_time(&mut self, write_time: DateTime<Utc>) {
         self.write_time = write_time;
     }
 
-    fn update_writer_id(&mut self, writer_id: &str) {
+    pub fn update_writer_id(&mut self, writer_id: &str) {
         self.writer_id = writer_id.into();
     }
 
-    fn update_name(&mut self, name: &str) {
+    pub fn update_name(&mut self, name: &str) {
         self.name = name.into();
     }
-}
 
-impl RawField {
     pub fn new(entity_id: impl Into<String>, field: impl Into<String>) -> Self {
         RawField {
             entity_id: entity_id.into(),
             name: field.into(),
             value: DatabaseValue::new(RawValue::Unspecified),
+            write_time: Utc::now(),
+            writer_id: "".to_string(),
+        }
+    }
+
+    pub fn new_with_value(
+        entity_id: impl Into<String>,
+        field: impl Into<String>,
+        value: RawValue,
+    ) -> Self {
+        RawField {
+            entity_id: entity_id.into(),
+            name: field.into(),
+            value: DatabaseValue::new(value),
             write_time: Utc::now(),
             writer_id: "".to_string(),
         }
@@ -232,7 +336,7 @@ impl From<&str> for NotificationToken {
 pub struct _NotificationManager {
     registered_config: HashSet<NotificationConfig>,
     config_to_token: HashMap<NotificationConfig, NotificationToken>,
-    token_to_callback_list: HashMap<NotificationToken, EventEmitter<DatabaseNotification>>
+    token_to_callback_list: HashMap<NotificationToken, EventEmitter<DatabaseNotification>>,
 }
 
 type NotificationManagerRef = Rc<RefCell<_NotificationManager>>;
@@ -251,7 +355,11 @@ impl NotificationManager {
         self.0.borrow_mut().clear();
     }
 
-    pub fn register(&self, client: Client, config: &NotificationConfig) -> Result<Receiver<DatabaseNotification>> {
+    pub fn register(
+        &self,
+        client: Client,
+        config: &NotificationConfig,
+    ) -> Result<Receiver<DatabaseNotification>> {
         self.0.borrow_mut().register(client, config)
     }
 
@@ -269,7 +377,7 @@ impl _NotificationManager {
         _NotificationManager {
             registered_config: HashSet::new(),
             config_to_token: HashMap::new(),
-            token_to_callback_list: HashMap::new()
+            token_to_callback_list: HashMap::new(),
         }
     }
 }
@@ -281,26 +389,43 @@ impl _NotificationManager {
         self.token_to_callback_list.clear();
     }
 
-    fn register(&mut self, client: Client, config: &NotificationConfig) -> Result<Receiver<DatabaseNotification>> {
+    fn register(
+        &mut self,
+        client: Client,
+        config: &NotificationConfig,
+    ) -> Result<Receiver<DatabaseNotification>> {
         if self.registered_config.contains(&config) {
-            let token = self.config_to_token.get(config)
-                .ok_or(Error::from_notification("Inconsistent notification state during registration"))?;
-            
-            let receiver = self.token_to_callback_list.get_mut(token)
-                .ok_or(Error::from_notification("Inconsistent notification state during registration"))?
+            let token = self
+                .config_to_token
+                .get(config)
+                .ok_or(Error::from_notification(
+                    "Inconsistent notification state during registration",
+                ))?;
+
+            let receiver = self
+                .token_to_callback_list
+                .get_mut(token)
+                .ok_or(Error::from_notification(
+                    "Inconsistent notification state during registration",
+                ))?
                 .new_receiver();
 
             return Ok(receiver);
         }
 
         let token = client.register_notification(config)?;
-        
+
         self.registered_config.insert(config.clone());
         self.config_to_token.insert(config.clone(), token.clone());
-        self.token_to_callback_list.insert(token.clone(), EventEmitter::new());
+        self.token_to_callback_list
+            .insert(token.clone(), EventEmitter::new());
 
-        let receiver = self.token_to_callback_list.get_mut(&token)
-            .ok_or(Error::from_notification("Inconsistent notification state during registration"))?
+        let receiver = self
+            .token_to_callback_list
+            .get_mut(&token)
+            .ok_or(Error::from_notification(
+                "Inconsistent notification state during registration",
+            ))?
             .new_receiver();
 
         Ok(receiver)
@@ -308,15 +433,18 @@ impl _NotificationManager {
 
     fn unregister(&mut self, client: Client, token: &NotificationToken) -> Result<()> {
         if !self.token_to_callback_list.contains_key(token) {
-            return Err(Error::from_notification("Token not found during unregistration"));
+            return Err(Error::from_notification(
+                "Token not found during unregistration",
+            ));
         }
 
         client.unregister_notification(token)?;
 
         self.token_to_callback_list.remove(token);
         self.config_to_token.retain(|_, v| v != token);
-        self.registered_config.retain(|c| self.config_to_token.contains_key(c));
-        
+        self.registered_config
+            .retain(|c| self.config_to_token.contains_key(c));
+
         Ok(())
     }
 
@@ -325,8 +453,12 @@ impl _NotificationManager {
 
         for notification in &notifications {
             let token = NotificationToken(notification.token.clone());
-            let emitter = self.token_to_callback_list.get_mut(&token)
-                .ok_or(Error::from_notification("Cannot process notification: Callback list doesn't exist for token"))?;
+            let emitter =
+                self.token_to_callback_list
+                    .get_mut(&token)
+                    .ok_or(Error::from_notification(
+                        "Cannot process notification: Callback list doesn't exist for token",
+                    ))?;
             emitter.emit(notification.clone());
         }
 
@@ -348,39 +480,39 @@ pub enum RawValue {
 }
 
 impl RawValue {
-    fn into_value(self) -> DatabaseValue {
+    pub fn into_value(self) -> DatabaseValue {
         DatabaseValue::new(self)
     }
 
-    fn as_str(&self) -> Result<String> {
+    pub fn as_str(&self) -> Result<String> {
         match self {
             RawValue::String(s) => Ok(s.clone()),
             _ => Err(Error::from_database_field("Value is not a string")),
         }
     }
 
-    fn as_i64(&self) -> Result<i64> {
+    pub fn as_i64(&self) -> Result<i64> {
         match self {
             RawValue::Integer(i) => Ok(*i),
             _ => Err(Error::from_database_field("Value is not an integer")),
         }
     }
 
-    fn as_f64(&self) -> Result<f64> {
+    pub fn as_f64(&self) -> Result<f64> {
         match self {
             RawValue::Float(f) => Ok(*f),
             _ => Err(Error::from_database_field("Value is not a float")),
         }
     }
 
-    fn as_bool(&self) -> Result<bool> {
+    pub fn as_bool(&self) -> Result<bool> {
         match self {
             RawValue::Boolean(b) => Ok(*b),
             _ => Err(Error::from_database_field("Value is not a boolean")),
         }
     }
 
-    fn as_entity_reference(&self) -> Result<String> {
+    pub fn as_entity_reference(&self) -> Result<String> {
         match self {
             RawValue::EntityReference(e) => Ok(e.clone()),
             _ => Err(Error::from_database_field(
@@ -389,14 +521,14 @@ impl RawValue {
         }
     }
 
-    fn as_timestamp(&self) -> Result<DateTime<Utc>> {
+    pub fn as_timestamp(&self) -> Result<DateTime<Utc>> {
         match self {
             RawValue::Timestamp(t) => Ok(*t),
             _ => Err(Error::from_database_field("Value is not a timestamp")),
         }
     }
 
-    fn as_connection_state(&self) -> Result<String> {
+    pub fn as_connection_state(&self) -> Result<String> {
         match self {
             RawValue::ConnectionState(c) => Ok(c.clone()),
             _ => Err(Error::from_database_field(
@@ -405,7 +537,7 @@ impl RawValue {
         }
     }
 
-    fn as_garage_door_state(&self) -> Result<String> {
+    pub fn as_garage_door_state(&self) -> Result<String> {
         match self {
             RawValue::GarageDoorState(g) => Ok(g.clone()),
             _ => Err(Error::from_database_field(
@@ -414,7 +546,7 @@ impl RawValue {
         }
     }
 
-    fn update_str(&mut self, value: String) -> Result<()> {
+    pub fn update_str(&mut self, value: String) -> Result<()> {
         match self {
             RawValue::String(s) => {
                 *s = value;
@@ -424,7 +556,7 @@ impl RawValue {
         }
     }
 
-    fn update_i64(&mut self, value: i64) -> Result<()> {
+    pub fn update_i64(&mut self, value: i64) -> Result<()> {
         match self {
             RawValue::Integer(i) => {
                 *i = value;
@@ -434,7 +566,7 @@ impl RawValue {
         }
     }
 
-    fn update_f64(&mut self, value: f64) -> Result<()> {
+    pub fn update_f64(&mut self, value: f64) -> Result<()> {
         match self {
             RawValue::Float(f) => {
                 *f = value;
@@ -444,7 +576,7 @@ impl RawValue {
         }
     }
 
-    fn update_bool(&mut self, value: bool) -> Result<()> {
+    pub fn update_bool(&mut self, value: bool) -> Result<()> {
         match self {
             RawValue::Boolean(b) => {
                 *b = value;
@@ -454,7 +586,7 @@ impl RawValue {
         }
     }
 
-    fn update_entity_reference(&mut self, value: String) -> Result<()> {
+    pub fn update_entity_reference(&mut self, value: String) -> Result<()> {
         match self {
             RawValue::EntityReference(e) => {
                 *e = value;
@@ -466,7 +598,7 @@ impl RawValue {
         }
     }
 
-    fn update_timestamp(&mut self, value: DateTime<Utc>) -> Result<()> {
+    pub fn update_timestamp(&mut self, value: DateTime<Utc>) -> Result<()> {
         match self {
             RawValue::Timestamp(t) => {
                 *t = value;
@@ -476,7 +608,7 @@ impl RawValue {
         }
     }
 
-    fn update_connection_state(&mut self, value: String) -> Result<()> {
+    pub fn update_connection_state(&mut self, value: String) -> Result<()> {
         match self {
             RawValue::ConnectionState(c) => {
                 *c = value;
@@ -488,7 +620,7 @@ impl RawValue {
         }
     }
 
-    fn update_garage_door_state(&mut self, value: String) -> Result<()> {
+    pub fn update_garage_door_state(&mut self, value: String) -> Result<()> {
         match self {
             RawValue::GarageDoorState(g) => {
                 *g = value;
@@ -498,6 +630,78 @@ impl RawValue {
                 "Value is not a garage door state",
             )),
         }
+    }
+
+    pub fn set_str(&mut self, value: String) {
+        *self = RawValue::String(value);
+    }
+
+    pub fn set_i64(&mut self, value: i64) {
+        *self = RawValue::Integer(value);
+    }
+
+    pub fn set_f64(&mut self, value: f64) {
+        *self = RawValue::Float(value);
+    }
+
+    pub fn set_bool(&mut self, value: bool) {
+        *self = RawValue::Boolean(value);
+    }
+
+    pub fn set_entity_reference(&mut self, value: String) {
+        *self = RawValue::EntityReference(value);
+    }
+
+    pub fn set_timestamp(&mut self, value: DateTime<Utc>) {
+        *self = RawValue::Timestamp(value);
+    }
+
+    pub fn set_connection_state(&mut self, value: String) {
+        *self = RawValue::ConnectionState(value);
+    }
+
+    pub fn set_garage_door_state(&mut self, value: String) {
+        *self = RawValue::GarageDoorState(value);
+    }
+
+    pub fn set_unspecified(&mut self) {
+        *self = RawValue::Unspecified;
+    }
+
+    pub fn is_unspecified(&self) -> bool {
+        matches!(self, RawValue::Unspecified)
+    }
+
+    pub fn is_str(&self) -> bool {
+        matches!(self, RawValue::String(_))
+    }
+
+    pub fn is_i64(&self) -> bool {
+        matches!(self, RawValue::Integer(_))
+    }
+
+    pub fn is_f64(&self) -> bool {
+        matches!(self, RawValue::Float(_))
+    }
+
+    pub fn is_bool(&self) -> bool {
+        matches!(self, RawValue::Boolean(_))
+    }
+
+    pub fn is_entity_reference(&self) -> bool {
+        matches!(self, RawValue::EntityReference(_))
+    }
+
+    pub fn is_timestamp(&self) -> bool {
+        matches!(self, RawValue::Timestamp(_))
+    }
+
+    pub fn is_connection_state(&self) -> bool {
+        matches!(self, RawValue::ConnectionState(_))
+    }
+
+    pub fn is_garage_door_state(&self) -> bool {
+        matches!(self, RawValue::GarageDoorState(_))
     }
 }
 
@@ -580,6 +784,78 @@ impl DatabaseValue {
 
     pub fn update_garage_door_state(&self, value: String) -> Result<()> {
         self.0.borrow_mut().update_garage_door_state(value)
+    }
+
+    pub fn set_str(&self, value: String) {
+        self.0.borrow_mut().set_str(value)
+    }
+
+    pub fn set_i64(&self, value: i64) {
+        self.0.borrow_mut().set_i64(value)
+    }
+
+    pub fn set_f64(&self, value: f64) {
+        self.0.borrow_mut().set_f64(value)
+    }
+
+    pub fn set_bool(&self, value: bool) {
+        self.0.borrow_mut().set_bool(value)
+    }
+
+    pub fn set_entity_reference(&self, value: String) {
+        self.0.borrow_mut().set_entity_reference(value)
+    }
+
+    pub fn set_timestamp(&self, value: DateTime<Utc>) {
+        self.0.borrow_mut().set_timestamp(value)
+    }
+
+    pub fn set_connection_state(&self, value: String) {
+        self.0.borrow_mut().set_connection_state(value)
+    }
+
+    pub fn set_garage_door_state(&self, value: String) {
+        self.0.borrow_mut().set_garage_door_state(value)
+    }
+
+    pub fn set_unspecified(&self) {
+        self.0.borrow_mut().set_unspecified()
+    }
+
+    pub fn is_unspecified(&self) -> bool {
+        self.0.borrow().is_unspecified()
+    }
+
+    pub fn is_str(&self) -> bool {
+        self.0.borrow().is_str()
+    }
+
+    pub fn is_i64(&self) -> bool {
+        self.0.borrow().is_i64()
+    }
+
+    pub fn is_f64(&self) -> bool {
+        self.0.borrow().is_f64()
+    }
+
+    pub fn is_bool(&self) -> bool {
+        self.0.borrow().is_bool()
+    }
+
+    pub fn is_entity_reference(&self) -> bool {
+        self.0.borrow().is_entity_reference()
+    }
+
+    pub fn is_timestamp(&self) -> bool {
+        self.0.borrow().is_timestamp()
+    }
+
+    pub fn is_connection_state(&self) -> bool {
+        self.0.borrow().is_connection_state()
+    }
+
+    pub fn is_garage_door_state(&self) -> bool {
+        self.0.borrow().is_garage_door_state()
     }
 }
 
@@ -680,7 +956,12 @@ impl Database {
         self.0.borrow().disconnect()
     }
 
-    pub fn find(&self, entity_type: &str, field: &Vec<String>, predicate: fn(&HashMap<String, DatabaseField>) -> bool) -> Result<Vec<DatabaseEntity>> {
+    pub fn find(
+        &self,
+        entity_type: &str,
+        field: &Vec<String>,
+        predicate: fn(&HashMap<String, DatabaseField>) -> bool,
+    ) -> Result<Vec<DatabaseEntity>> {
         self.0.borrow().find(entity_type, field, predicate)
     }
 
@@ -704,7 +985,10 @@ impl Database {
         self.0.borrow().clear_notifications();
     }
 
-    pub fn register_notification(&self, config: &NotificationConfig) -> Result<Receiver<DatabaseNotification>> {
+    pub fn register_notification(
+        &self,
+        config: &NotificationConfig,
+    ) -> Result<Receiver<DatabaseNotification>> {
         self.0.borrow().register_notification(config)
     }
 
@@ -751,7 +1035,12 @@ impl _Database {
         self.client.get_entities(entity_type)
     }
 
-    fn find(&self, entity_type: &str, fields: &Vec<String>, predicate: fn(&HashMap<String, DatabaseField>) -> bool) -> Result<Vec<DatabaseEntity>> {
+    fn find(
+        &self,
+        entity_type: &str,
+        fields: &Vec<String>,
+        predicate: fn(&HashMap<String, DatabaseField>) -> bool,
+    ) -> Result<Vec<DatabaseEntity>> {
         let entities = self.get_entities(entity_type)?;
         let mut result = vec![];
 
@@ -759,10 +1048,10 @@ impl _Database {
             let mut requests = vec![];
 
             for field in fields {
-                let field = RawField::new(entity.entity_id.clone(), field.clone());
+                let field = RawField::new(entity.id.clone(), field.clone());
                 requests.push(DatabaseField::new(field));
             }
-            
+
             self.read(&mut requests)?;
 
             let mut fields_map = HashMap::new();
@@ -786,16 +1075,23 @@ impl _Database {
         self.client.write(requests)
     }
 
-    fn register_notification(&self, config: &NotificationConfig) -> Result<Receiver<DatabaseNotification>> {
-        self.notification_manager.register(self.client.clone(), config)
+    fn register_notification(
+        &self,
+        config: &NotificationConfig,
+    ) -> Result<Receiver<DatabaseNotification>> {
+        self.notification_manager
+            .register(self.client.clone(), config)
     }
 
     fn unregister_notification(&self, token: &NotificationToken) -> Result<()> {
-        self.notification_manager.unregister(self.client.clone(), token)
+        self.notification_manager
+            .unregister(self.client.clone(), token)
     }
 
     fn process_notifications(&self) -> Result<()> {
-        return self.notification_manager.process_notifications(self.client.clone());
+        return self
+            .notification_manager
+            .process_notifications(self.client.clone());
     }
 }
 
@@ -827,7 +1123,7 @@ impl<T: Clone> EventEmitter<T> {
     pub fn disconnect(&mut self, id: &SlotToken) {
         self.senders.remove(id);
     }
-    
+
     pub fn new_receiver(&mut self) -> Receiver<T> {
         let (sender, receiver) = channel();
         self.connect(sender);
@@ -835,9 +1131,8 @@ impl<T: Clone> EventEmitter<T> {
     }
 
     pub fn emit(&mut self, args: T) {
-        self.senders.retain(|_, sender| {
-            sender.send(args.clone()).is_ok()
-        });
+        self.senders
+            .retain(|_, sender| sender.send(args.clone()).is_ok());
     }
 }
 
@@ -880,9 +1175,7 @@ pub struct ConsoleLogger {
 
 impl ConsoleLogger {
     pub fn new(level: LogLevel) -> Self {
-        ConsoleLogger {
-            level: level,
-        }
+        ConsoleLogger { level: level }
     }
 }
 
@@ -1016,7 +1309,7 @@ pub trait WorkerTrait {
 pub struct Application {
     ctx: ApplicationContext,
     workers: Vec<Box<dyn WorkerTrait>>,
-    loop_interval_ms: u64
+    loop_interval_ms: u64,
 }
 
 impl Application {
@@ -1024,14 +1317,17 @@ impl Application {
         Self {
             ctx,
             workers: vec![],
-            loop_interval_ms
+            loop_interval_ms,
         }
     }
 }
 
 impl WorkerTrait for Application {
     fn intialize(&mut self, ctx: ApplicationContext) -> Result<()> {
-        ctx.logger().log(&LogLevel::Info, "[qdb::Application::initialize] Initializing application");
+        ctx.logger().log(
+            &LogLevel::Info,
+            "[qdb::Application::initialize] Initializing application",
+        );
         for worker in &mut self.workers {
             match worker.intialize(ctx.clone()) {
                 Ok(_) => {}
@@ -1048,7 +1344,10 @@ impl WorkerTrait for Application {
     }
 
     fn do_work(&mut self, ctx: ApplicationContext) -> Result<()> {
-        ctx.logger().log(&LogLevel::Info, "[qdb::Application::do_work] Application has started");
+        ctx.logger().log(
+            &LogLevel::Info,
+            "[qdb::Application::do_work] Application has started",
+        );
 
         while {
             let start = Instant::now();
@@ -1075,11 +1374,11 @@ impl WorkerTrait for Application {
                     }
                 }
             }
-            
+
             if !ctx.quit().get() {
                 let loop_time = std::time::Duration::from_millis(self.loop_interval_ms);
                 let elapsed_time = start.elapsed();
-                
+
                 if loop_time > elapsed_time {
                     let sleep_time = loop_time - start.elapsed();
                     std::thread::sleep(sleep_time);
@@ -1093,7 +1392,10 @@ impl WorkerTrait for Application {
     }
 
     fn deinitialize(&mut self, ctx: ApplicationContext) -> Result<()> {
-        ctx.logger().log(&LogLevel::Info, "[qdb::Application::deinitialize] Deinitializing application");
+        ctx.logger().log(
+            &LogLevel::Info,
+            "[qdb::Application::deinitialize] Deinitializing application",
+        );
 
         for worker in &mut self.workers {
             match worker.deinitialize(ctx.clone()) {
@@ -1107,7 +1409,10 @@ impl WorkerTrait for Application {
             }
         }
 
-        ctx.logger().log(&LogLevel::Info, "[qdb::Application::deinitialize] Shutting down now");
+        ctx.logger().log(
+            &LogLevel::Info,
+            "[qdb::Application::deinitialize] Shutting down now",
+        );
         Ok(())
     }
 
@@ -1168,7 +1473,10 @@ impl DatabaseWorker {
 
 impl WorkerTrait for DatabaseWorker {
     fn intialize(&mut self, ctx: ApplicationContext) -> Result<()> {
-        ctx.logger().log(&LogLevel::Info, "[qdb::DatabaseWorker::initialize] Initializing database worker");
+        ctx.logger().log(
+            &LogLevel::Info,
+            "[qdb::DatabaseWorker::initialize] Initializing database worker",
+        );
         Ok(())
     }
 
@@ -1185,24 +1493,33 @@ impl WorkerTrait for DatabaseWorker {
 
         if !ctx.database().connected() {
             if self.is_db_connected {
-                ctx.logger().log(&LogLevel::Warning, "[qdb::DatabaseWorker::do_work] Disconnected from database");
+                ctx.logger().log(
+                    &LogLevel::Warning,
+                    "[qdb::DatabaseWorker::do_work] Disconnected from database",
+                );
                 ctx.database().clear_notifications();
                 self.is_db_connected = false;
                 self.emitters.connection_status.emit(self.is_db_connected);
             }
 
-            ctx.logger().log(&LogLevel::Debug, "[qdb::DatabaseWorker::do_work] Attempting to connect to the database...");
-            
-            ctx.database().disconnect();   
+            ctx.logger().log(
+                &LogLevel::Debug,
+                "[qdb::DatabaseWorker::do_work] Attempting to connect to the database...",
+            );
+
+            ctx.database().disconnect();
             ctx.database().connect()?;
 
             if ctx.database().connected() {
-                ctx.logger().log(&LogLevel::Info, "[qdb::DatabaseWorker::do_work] Connected to the database");
+                ctx.logger().log(
+                    &LogLevel::Info,
+                    "[qdb::DatabaseWorker::do_work] Connected to the database",
+                );
                 self.is_db_connected = true;
                 self.emitters.connection_status.emit(self.is_db_connected);
             }
 
-            return Ok(())
+            return Ok(());
         }
 
         ctx.database().process_notifications()?;
@@ -1211,7 +1528,10 @@ impl WorkerTrait for DatabaseWorker {
     }
 
     fn deinitialize(&mut self, ctx: ApplicationContext) -> Result<()> {
-        ctx.logger().log(&LogLevel::Info, "[qdb::DatabaseWorker::deinitialize] Deinitializing database worker");
+        ctx.logger().log(
+            &LogLevel::Info,
+            "[qdb::DatabaseWorker::deinitialize] Deinitializing database worker",
+        );
         Ok(())
     }
 
