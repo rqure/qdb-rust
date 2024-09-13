@@ -10,46 +10,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Instant;
 
-#[derive(Debug)]
-pub enum Error {
-    ClientError(String),
-    DatabaseFieldError(String),
-    NotificationError(String),
-}
-
-impl Error {
-    pub fn from_client(msg: &str) -> Box<Self> {
-        Box::new(Error::ClientError(msg.to_string()))
-    }
-
-    pub fn from_notification(msg: &str) -> Box<Self> {
-        Box::new(Error::NotificationError(msg.to_string()))
-    }
-
-    pub fn from_database_field(msg: &str) -> Box<Self> {
-        Box::new(Error::DatabaseFieldError(msg.to_string()))
-    }
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::ClientError(msg) => write!(f, "Client error: {}", msg),
-            Error::DatabaseFieldError(msg) => write!(f, "Database error: {}", msg),
-            Error::NotificationError(msg) => write!(f, "Notification error: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Error::ClientError(_) => None,
-            Error::DatabaseFieldError(_) => None,
-            Error::NotificationError(_) => None,
-        }
-    }
-}
+mod error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DatabaseEntity {
@@ -398,14 +359,14 @@ impl _NotificationManager {
             let token = self
                 .config_to_token
                 .get(config)
-                .ok_or(Error::from_notification(
+                .ok_or(error::Error::from_notification(
                     "Inconsistent notification state during registration",
                 ))?;
 
             let receiver = self
                 .token_to_callback_list
                 .get_mut(token)
-                .ok_or(Error::from_notification(
+                .ok_or(error::Error::from_notification(
                     "Inconsistent notification state during registration",
                 ))?
                 .new_receiver();
@@ -423,7 +384,7 @@ impl _NotificationManager {
         let receiver = self
             .token_to_callback_list
             .get_mut(&token)
-            .ok_or(Error::from_notification(
+            .ok_or(error::Error::from_notification(
                 "Inconsistent notification state during registration",
             ))?
             .new_receiver();
@@ -433,7 +394,7 @@ impl _NotificationManager {
 
     fn unregister(&mut self, client: Client, token: &NotificationToken) -> Result<()> {
         if !self.token_to_callback_list.contains_key(token) {
-            return Err(Error::from_notification(
+            return Err(error::Error::from_notification(
                 "Token not found during unregistration",
             ));
         }
@@ -456,7 +417,7 @@ impl _NotificationManager {
             let emitter =
                 self.token_to_callback_list
                     .get_mut(&token)
-                    .ok_or(Error::from_notification(
+                    .ok_or(error::Error::from_notification(
                         "Cannot process notification: Callback list doesn't exist for token",
                     ))?;
             emitter.emit(notification.clone());
@@ -487,35 +448,35 @@ impl RawValue {
     pub fn as_str(&self) -> Result<String> {
         match self {
             RawValue::String(s) => Ok(s.clone()),
-            _ => Err(Error::from_database_field("Value is not a string")),
+            _ => Err(error::Error::from_database_field("Value is not a string")),
         }
     }
 
     pub fn as_i64(&self) -> Result<i64> {
         match self {
             RawValue::Integer(i) => Ok(*i),
-            _ => Err(Error::from_database_field("Value is not an integer")),
+            _ => Err(error::Error::from_database_field("Value is not an integer")),
         }
     }
 
     pub fn as_f64(&self) -> Result<f64> {
         match self {
             RawValue::Float(f) => Ok(*f),
-            _ => Err(Error::from_database_field("Value is not a float")),
+            _ => Err(error::Error::from_database_field("Value is not a float")),
         }
     }
 
     pub fn as_bool(&self) -> Result<bool> {
         match self {
             RawValue::Boolean(b) => Ok(*b),
-            _ => Err(Error::from_database_field("Value is not a boolean")),
+            _ => Err(error::Error::from_database_field("Value is not a boolean")),
         }
     }
 
     pub fn as_entity_reference(&self) -> Result<String> {
         match self {
             RawValue::EntityReference(e) => Ok(e.clone()),
-            _ => Err(Error::from_database_field(
+            _ => Err(error::Error::from_database_field(
                 "Value is not an entity reference",
             )),
         }
@@ -524,14 +485,14 @@ impl RawValue {
     pub fn as_timestamp(&self) -> Result<DateTime<Utc>> {
         match self {
             RawValue::Timestamp(t) => Ok(*t),
-            _ => Err(Error::from_database_field("Value is not a timestamp")),
+            _ => Err(error::Error::from_database_field("Value is not a timestamp")),
         }
     }
 
     pub fn as_connection_state(&self) -> Result<String> {
         match self {
             RawValue::ConnectionState(c) => Ok(c.clone()),
-            _ => Err(Error::from_database_field(
+            _ => Err(error::Error::from_database_field(
                 "Value is not a connection state",
             )),
         }
@@ -540,7 +501,7 @@ impl RawValue {
     pub fn as_garage_door_state(&self) -> Result<String> {
         match self {
             RawValue::GarageDoorState(g) => Ok(g.clone()),
-            _ => Err(Error::from_database_field(
+            _ => Err(error::Error::from_database_field(
                 "Value is not a garage door state",
             )),
         }
@@ -552,7 +513,7 @@ impl RawValue {
                 *s = value;
                 Ok(())
             }
-            _ => Err(Error::from_database_field("Value is not a string")),
+            _ => Err(error::Error::from_database_field("Value is not a string")),
         }
     }
 
@@ -562,7 +523,7 @@ impl RawValue {
                 *i = value;
                 Ok(())
             }
-            _ => Err(Error::from_database_field("Value is not an integer")),
+            _ => Err(error::Error::from_database_field("Value is not an integer")),
         }
     }
 
@@ -572,7 +533,7 @@ impl RawValue {
                 *f = value;
                 Ok(())
             }
-            _ => Err(Error::from_database_field("Value is not a float")),
+            _ => Err(error::Error::from_database_field("Value is not a float")),
         }
     }
 
@@ -582,7 +543,7 @@ impl RawValue {
                 *b = value;
                 Ok(())
             }
-            _ => Err(Error::from_database_field("Value is not a boolean")),
+            _ => Err(error::Error::from_database_field("Value is not a boolean")),
         }
     }
 
@@ -592,7 +553,7 @@ impl RawValue {
                 *e = value;
                 Ok(())
             }
-            _ => Err(Error::from_database_field(
+            _ => Err(error::Error::from_database_field(
                 "Value is not an entity reference",
             )),
         }
@@ -604,7 +565,7 @@ impl RawValue {
                 *t = value;
                 Ok(())
             }
-            _ => Err(Error::from_database_field("Value is not a timestamp")),
+            _ => Err(error::Error::from_database_field("Value is not a timestamp")),
         }
     }
 
@@ -614,7 +575,7 @@ impl RawValue {
                 *c = value;
                 Ok(())
             }
-            _ => Err(Error::from_database_field(
+            _ => Err(error::Error::from_database_field(
                 "Value is not a connection state",
             )),
         }
@@ -626,7 +587,7 @@ impl RawValue {
                 *g = value;
                 Ok(())
             }
-            _ => Err(Error::from_database_field(
+            _ => Err(error::Error::from_database_field(
                 "Value is not a garage door state",
             )),
         }

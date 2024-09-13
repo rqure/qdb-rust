@@ -1,20 +1,21 @@
-use super::ClientTrait;
-use super::DatabaseEntity;
-use super::RawField;
-use super::DatabaseNotification;
-use super::RawValue;
-use super::Error;
-use super::DatabaseField;
-use super::DatabaseValue;
-use super::NotificationConfig;
-use super::NotificationToken;
-use super::Result;
+use crate::ClientTrait;
+use crate::DatabaseEntity;
+use crate::RawField;
+use crate::DatabaseNotification;
+use crate::RawValue;
+use crate::DatabaseField;
+use crate::DatabaseValue;
+use crate::NotificationConfig;
+use crate::NotificationToken;
+use crate::error;
+use crate::Result;
 
 use serde_json::Map;
 use serde_json::Number;
 use serde_json::Value;
 
 use chrono::{DateTime, Utc};
+
 
 pub trait Pipe {
     fn post(&self, url: &str, payload: &str) -> Result<String>;
@@ -30,8 +31,8 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(url: &str, pipe: Box<dyn Pipe>) -> super::Client {
-        super::Client::new(Client {
+    pub fn new(url: &str, pipe: Box<dyn Pipe>) -> Client {
+        Client::new(Client {
             pipe,
             auth_failure: false,
             endpoint_reachable: false,
@@ -72,7 +73,7 @@ impl Client {
             .pointer(&format!("{}/id", prefix))
             .and_then(|v| v.as_str())
             .ok_or_else(|| {
-                Error::from_client("Invalid response from server: entity ID is not valid")
+                error::Error::from_client("Invalid response from server: entity ID is not valid")
             })?
             .to_string();
 
@@ -80,7 +81,7 @@ impl Client {
             .pointer(&format!("{}/name", prefix))
             .and_then(|v| v.as_str())
             .ok_or_else(|| {
-                Error::from_client("Invalid response from server: name is not valid")
+                error::Error::from_client("Invalid response from server: name is not valid")
             })?
             .to_string();
 
@@ -89,7 +90,7 @@ impl Client {
                 .pointer(&format!("{}/writeTime", prefix))
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| {
-                    Error::from_client("Invalid response from server: writeTime is not valid")
+                    error::Error::from_client("Invalid response from server: writeTime is not valid")
                 })?,
         )?
         .with_timezone(&Utc);
@@ -132,10 +133,10 @@ impl Client {
         if !self.has_authenticated(&response) {
             self.auth_failure = true;
 
-            return Err(Error::from_client("Failed to authenticate"));
+            return Err(error::Error::from_client("Failed to authenticate"));
         }
 
-        let response = response.get("payload").ok_or(Error::from_client(
+        let response = response.get("payload").ok_or(error::Error::from_client(
             "Invalid response from server: payload is not valid",
         ))?;
 
@@ -148,7 +149,7 @@ impl Client {
         let value_type = value
             .get("@type")
             .and_then(|v| v.as_str())
-            .ok_or(Error::from_client(
+            .ok_or(error::Error::from_client(
                 "Invalid response from server: value type is not valid",
             ))?;
 
@@ -157,7 +158,7 @@ impl Client {
                 let value = value
                     .get("raw")
                     .and_then(|v| v.as_str())
-                    .ok_or(Error::from_client(
+                    .ok_or(error::Error::from_client(
                         "Invalid response from server: value is not valid",
                     ))?
                     .to_string();
@@ -169,7 +170,7 @@ impl Client {
                     // should be as i64 but it's a limitation with jsonpb marshaller on server side
                     .and_then(|v| v.as_str())
                     .and_then(|v| v.parse::<i64>().ok())
-                    .ok_or(Error::from_client(
+                    .ok_or(error::Error::from_client(
                         "Invalid response from server: value is not valid",
                     ))?;
                 RawValue::Integer(value)
@@ -178,7 +179,7 @@ impl Client {
                 let value = value
                     .get("raw")
                     .and_then(|v| v.as_f64())
-                    .ok_or(Error::from_client(
+                    .ok_or(error::Error::from_client(
                         "Invalid response from server: value is not valid",
                     ))?;
                 RawValue::Float(value)
@@ -188,7 +189,7 @@ impl Client {
                     value
                         .get("raw")
                         .and_then(|v| v.as_bool())
-                        .ok_or(Error::from_client(
+                        .ok_or(error::Error::from_client(
                             "Invalid response from server: value is not valid",
                         ))?;
                 RawValue::Boolean(value)
@@ -197,7 +198,7 @@ impl Client {
                 let value = value
                     .get("raw")
                     .and_then(|v| v.as_str())
-                    .ok_or(Error::from_client(
+                    .ok_or(error::Error::from_client(
                         "Invalid response from server: value is not valid",
                     ))?
                     .to_string();
@@ -207,7 +208,7 @@ impl Client {
                 let value = value
                     .get("raw")
                     .and_then(|v| v.as_str())
-                    .ok_or(Error::from_client(
+                    .ok_or(error::Error::from_client(
                         "Invalid response from server: value is not valid",
                     ))?;
                 let timestamp = DateTime::parse_from_rfc3339(value)?.to_utc();
@@ -217,7 +218,7 @@ impl Client {
                 let value = value
                     .get("raw")
                     .and_then(|v| v.as_str())
-                    .ok_or(Error::from_client(
+                    .ok_or(error::Error::from_client(
                         "Invalid response from server: value is not valid",
                     ))?
                     .to_string();
@@ -227,14 +228,14 @@ impl Client {
                 let value = value
                     .get("raw")
                     .and_then(|v| v.as_str())
-                    .ok_or(Error::from_client(
+                    .ok_or(error::Error::from_client(
                         "Invalid response from server: value is not valid",
                     ))?
                     .to_string();
                 RawValue::GarageDoorState(value)
             }
             _ => {
-                return Err(Error::from_client(
+                return Err(error::Error::from_client(
                     "Invalid response from server: value type is not valid",
                 ))
             }
@@ -277,7 +278,7 @@ impl ClientTrait for Client {
             .as_object()
             .and_then(|o| o.get("entity"))
             .and_then(|v| v.as_object())
-            .ok_or(Error::from_client(
+            .ok_or(error::Error::from_client(
                 "Invalid response from server: Failed to extract entity",
             ))?;
 
@@ -285,21 +286,21 @@ impl ClientTrait for Client {
             id: entity
                 .get("id")
                 .and_then(|v| v.as_str())
-                .ok_or(Error::from_client(
+                .ok_or(error::Error::from_client(
                     "Invalid response from server: entity id is not valid",
                 ))?
                 .to_string(),
             type_name: entity
                 .get("type")
                 .and_then(|v| v.as_str())
-                .ok_or(Error::from_client(
+                .ok_or(error::Error::from_client(
                     "Invalid response from server: entity type is not valid",
                 ))?
                 .to_string(),
             name: entity
                 .get("name")
                 .and_then(|v| v.as_str())
-                .ok_or(Error::from_client(
+                .ok_or(error::Error::from_client(
                     "Invalid response from server: entity name is not valid",
                 ))?
                 .to_string(),
@@ -322,7 +323,7 @@ impl ClientTrait for Client {
             .as_object()
             .and_then(|o| o.get("entities"))
             .and_then(|v| v.as_array())
-            .ok_or(Error::from_client(
+            .ok_or(error::Error::from_client(
                 "Invalid response from server: Failed to extract entities",
             ))?;
 
@@ -333,27 +334,27 @@ impl ClientTrait for Client {
                     id: entity
                         .get("id")
                         .and_then(|v| v.as_str())
-                        .ok_or(Error::from_client(
+                        .ok_or(error::Error::from_client(
                             "Invalid response from server: entity id is not valid",
                         ))?
                         .to_string(),
                     type_name: entity
                         .get("type")
                         .and_then(|v| v.as_str())
-                        .ok_or(Error::from_client(
+                        .ok_or(error::Error::from_client(
                             "Invalid response from server: entity type is not valid",
                         ))?
                         .to_string(),
                     name: entity
                         .get("name")
                         .and_then(|v| v.as_str())
-                        .ok_or(Error::from_client(
+                        .ok_or(error::Error::from_client(
                             "Invalid response from server: entity name is not valid",
                         ))?
                         .to_string(),
                 }),
                 _ => {
-                    return Err(Error::from_client(
+                    return Err(error::Error::from_client(
                         "Invalid response from server: entity is not an object",
                     ))
                 }
@@ -391,7 +392,7 @@ impl ClientTrait for Client {
             .as_object()
             .and_then(|o| o.get("response"))
             .and_then(|v| v.as_array())
-            .ok_or(Error::from_client(
+            .ok_or(error::Error::from_client(
                 "Invalid response from server: response is not valid",
             ))?;
 
@@ -401,7 +402,7 @@ impl ClientTrait for Client {
                     let entity_id = entity
                         .get("id")
                         .and_then(|v| v.as_str())
-                        .ok_or(Error::from_client(
+                        .ok_or(error::Error::from_client(
                             "Invalid response from server: entity id is not valid",
                         ))?
                         .to_string();
@@ -409,7 +410,7 @@ impl ClientTrait for Client {
                     let field_name = entity
                         .get("field")
                         .and_then(|v| v.as_str())
-                        .ok_or(Error::from_client(
+                        .ok_or(error::Error::from_client(
                             "Invalid response from server: field name is not valid",
                         ))?
                         .to_string();
@@ -419,44 +420,44 @@ impl ClientTrait for Client {
                         .find(|r: &&DatabaseField| {
                             r.entity_id() == entity_id && r.name() == field_name
                         })
-                        .ok_or(Error::from_client(
+                        .ok_or(error::Error::from_client(
                             "Invalid response from server: Field not found",
                         ))?;
 
                     let value = entity
                         .get("value")
                         .and_then(|v: &Value| v.as_object())
-                        .ok_or(Error::from_client(
+                        .ok_or(error::Error::from_client(
                             "Invalid response from server: value is not valid",
                         ))?;
 
                     let write_time = entity
                         .get("writeTime")
                         .and_then(|v| v.as_object())
-                        .ok_or(Error::from_client(
+                        .ok_or(error::Error::from_client(
                             "Invalid response from server: write time is not valid",
                         ))?
                         .get("raw")
-                        .ok_or(Error::from_client(
+                        .ok_or(error::Error::from_client(
                             "Invalid response from server: write time is not valid",
                         ))?
                         .as_str()
-                        .ok_or(Error::from_client(
+                        .ok_or(error::Error::from_client(
                             "Invalid response from server: write time is not valid",
                         ))?;
 
                     let writer_id = entity
                         .get("writerId")
                         .and_then(|v| v.as_object())
-                        .ok_or(Error::from_client(
+                        .ok_or(error::Error::from_client(
                             "Invalid response from server: writer id is not valid",
                         ))?
                         .get("raw")
-                        .ok_or(Error::from_client(
+                        .ok_or(error::Error::from_client(
                             "Invalid response from server: writer id is not valid",
                         ))?
                         .as_str()
-                        .ok_or(Error::from_client(
+                        .ok_or(error::Error::from_client(
                             "Invalid response from server: writer id is not valid",
                         ))?
                         .to_string();
@@ -466,7 +467,7 @@ impl ClientTrait for Client {
                     field.update_writer_id(writer_id.as_str());
                 }
                 _ => {
-                    return Err(Box::new(Error::ClientError(
+                    return Err(Box::new(error::Error::ClientError(
                         "Invalid response from server: response is not an object".to_string(),
                     )))
                 }
@@ -636,15 +637,15 @@ impl ClientTrait for Client {
             .as_object()
             .and_then(|o| o.get("tokens"))
             .and_then(|v| v.as_array())
-            .ok_or(Error::from_client(
+            .ok_or(error::Error::from_client(
                 "Invalid response from server: token is not valid",
             ))?
             .get(0)
-            .ok_or(Error::from_client(
+            .ok_or(error::Error::from_client(
                 "Invalid response from server: token is not valid",
             ))?
             .as_str()
-            .ok_or(Error::from_client(
+            .ok_or(error::Error::from_client(
                 "Invalid response from server: token is not valid",
             ))?;
 
@@ -682,7 +683,7 @@ impl ClientTrait for Client {
             .and_then(|o| o.get("notifications"))
             .and_then(|v| v.as_array())
             .ok_or_else(|| {
-                Error::from_client("Invalid response from server: notifications is not valid")
+                error::Error::from_client("Invalid response from server: notifications is not valid")
             })?;
 
         let mut result = Vec::with_capacity(notifications.len());
@@ -691,7 +692,7 @@ impl ClientTrait for Client {
                 .pointer("/token")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| {
-                    Error::from_client("Invalid response from server: notification token is not valid")
+                    error::Error::from_client("Invalid response from server: notification token is not valid")
                 })?
                 .to_string();
 
@@ -702,7 +703,7 @@ impl ClientTrait for Client {
                 .pointer("/context")
                 .and_then(|v| v.as_array())
                 .ok_or_else(|| {
-                    Error::from_client("Invalid response from server: notification context is not valid")
+                    error::Error::from_client("Invalid response from server: notification context is not valid")
                 })?
                 .iter()
                 .map(|v| self.parse_database_field(v, ""))
