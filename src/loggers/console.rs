@@ -1,3 +1,5 @@
+use crate::loggers::common::{LogLevel, LoggerTrait};
+use chrono::Utc;
 
 pub struct ConsoleLogger {
     level: LogLevel,

@@ -1,3 +1,8 @@
+use crate::Result;
+use crate::schema::field::DatabaseField;
+use crate::schema::entity::DatabaseEntity;
+use crate::schema::notification::{DatabaseNotification, NotificationConfig, NotificationToken};
+
 pub trait ClientTrait {
     fn connect(&mut self) -> Result<()>;
     fn connected(&self) -> bool;

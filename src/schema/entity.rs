@@ -1,9 +1,10 @@
+use crate::schema::field::{DatabaseField, RawField};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DatabaseEntity {
-    id: String,
-    type_name: String,
-    name: String,
+    pub id: String,
+    pub type_name: String,
+    pub name: String,
 }
 
 impl DatabaseEntity {

@@ -1,3 +1,8 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+use chrono::{DateTime, Utc};
+use crate::Result;
+use crate::error::Error;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RawValue {
@@ -20,35 +25,35 @@ impl RawValue {
     pub fn as_str(&self) -> Result<String> {
         match self {
             RawValue::String(s) => Ok(s.clone()),
-            _ => Err(error::Error::from_database_field("Value is not a string")),
+            _ => Err(Error::from_database_field("Value is not a string")),
         }
     }
 
     pub fn as_i64(&self) -> Result<i64> {
         match self {
             RawValue::Integer(i) => Ok(*i),
-            _ => Err(error::Error::from_database_field("Value is not an integer")),
+            _ => Err(Error::from_database_field("Value is not an integer")),
         }
     }
 
     pub fn as_f64(&self) -> Result<f64> {
         match self {
             RawValue::Float(f) => Ok(*f),
-            _ => Err(error::Error::from_database_field("Value is not a float")),
+            _ => Err(Error::from_database_field("Value is not a float")),
         }
     }
 
     pub fn as_bool(&self) -> Result<bool> {
         match self {
             RawValue::Boolean(b) => Ok(*b),
-            _ => Err(error::Error::from_database_field("Value is not a boolean")),
+            _ => Err(Error::from_database_field("Value is not a boolean")),
         }
     }
 
     pub fn as_entity_reference(&self) -> Result<String> {
         match self {
             RawValue::EntityReference(e) => Ok(e.clone()),
-            _ => Err(error::Error::from_database_field(
+            _ => Err(Error::from_database_field(
                 "Value is not an entity reference",
             )),
         }
@@ -57,14 +62,14 @@ impl RawValue {
     pub fn as_timestamp(&self) -> Result<DateTime<Utc>> {
         match self {
             RawValue::Timestamp(t) => Ok(*t),
-            _ => Err(error::Error::from_database_field("Value is not a timestamp")),
+            _ => Err(Error::from_database_field("Value is not a timestamp")),
         }
     }
 
     pub fn as_connection_state(&self) -> Result<String> {
         match self {
             RawValue::ConnectionState(c) => Ok(c.clone()),
-            _ => Err(error::Error::from_database_field(
+            _ => Err(Error::from_database_field(
                 "Value is not a connection state",
             )),
         }
@@ -73,7 +78,7 @@ impl RawValue {
     pub fn as_garage_door_state(&self) -> Result<String> {
         match self {
             RawValue::GarageDoorState(g) => Ok(g.clone()),
-            _ => Err(error::Error::from_database_field(
+            _ => Err(Error::from_database_field(
                 "Value is not a garage door state",
             )),
         }
@@ -85,7 +90,7 @@ impl RawValue {
                 *s = value;
                 Ok(())
             }
-            _ => Err(error::Error::from_database_field("Value is not a string")),
+            _ => Err(Error::from_database_field("Value is not a string")),
         }
     }
 
@@ -95,7 +100,7 @@ impl RawValue {
                 *i = value;
                 Ok(())
             }
-            _ => Err(error::Error::from_database_field("Value is not an integer")),
+            _ => Err(Error::from_database_field("Value is not an integer")),
         }
     }
 
@@ -105,7 +110,7 @@ impl RawValue {
                 *f = value;
                 Ok(())
             }
-            _ => Err(error::Error::from_database_field("Value is not a float")),
+            _ => Err(Error::from_database_field("Value is not a float")),
         }
     }
 
@@ -115,7 +120,7 @@ impl RawValue {
                 *b = value;
                 Ok(())
             }
-            _ => Err(error::Error::from_database_field("Value is not a boolean")),
+            _ => Err(Error::from_database_field("Value is not a boolean")),
         }
     }
 
@@ -125,7 +130,7 @@ impl RawValue {
                 *e = value;
                 Ok(())
             }
-            _ => Err(error::Error::from_database_field(
+            _ => Err(Error::from_database_field(
                 "Value is not an entity reference",
             )),
         }
@@ -137,7 +142,7 @@ impl RawValue {
                 *t = value;
                 Ok(())
             }
-            _ => Err(error::Error::from_database_field("Value is not a timestamp")),
+            _ => Err(Error::from_database_field("Value is not a timestamp")),
         }
     }
 
@@ -147,7 +152,7 @@ impl RawValue {
                 *c = value;
                 Ok(())
             }
-            _ => Err(error::Error::from_database_field(
+            _ => Err(Error::from_database_field(
                 "Value is not a connection state",
             )),
         }
@@ -159,7 +164,7 @@ impl RawValue {
                 *g = value;
                 Ok(())
             }
-            _ => Err(error::Error::from_database_field(
+            _ => Err(Error::from_database_field(
                 "Value is not a garage door state",
             )),
         }
