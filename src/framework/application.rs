@@ -147,7 +147,7 @@ impl WorkerTrait for Application {
                 let elapsed_time = start.elapsed();
 
                 if loop_time > elapsed_time {
-                    let sleep_time = loop_time - start.elapsed();
+                    let sleep_time = loop_time - elapsed_time;
                     std::thread::sleep(sleep_time);
                 }
             }
