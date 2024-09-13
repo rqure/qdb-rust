@@ -1,3 +1,6 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+use crate::loggers::common::{LogLevel, LoggerTrait};
 
 pub type LoggerRef = Rc<RefCell<dyn LoggerTrait>>;
 pub struct Logger(LoggerRef);

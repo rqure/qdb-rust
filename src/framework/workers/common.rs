@@ -1,3 +1,5 @@
+use crate::framework::application::ApplicationContext;
+use crate::Result;
 
 pub trait WorkerTrait {
     fn intialize(&mut self, ctx: ApplicationContext) -> Result<()>;

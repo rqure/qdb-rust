@@ -1,3 +1,14 @@
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+use std::sync::mpsc::Receiver;
+
+use crate::framework::client::Client;
+use crate::framework::notification::NotificationManager;
+use crate::Result;
+use crate::schema::field::{DatabaseField, RawField};
+use crate::schema::notification::{DatabaseNotification, NotificationConfig, NotificationToken};
+use crate::schema::entity::DatabaseEntity;
 
 pub struct _Database {
     client: Client,

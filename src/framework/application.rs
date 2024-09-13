@@ -1,3 +1,12 @@
+use crate::framework::database::Database;
+use crate::framework::logger::Logger;
+use crate::framework::workers::common::WorkerTrait;
+use crate::loggers::common::LogLevel;
+use crate::Result;
+
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::time::Instant;
 
 pub trait ApplicationTrait {
     fn execute(&mut self);
