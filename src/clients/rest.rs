@@ -1,3 +1,4 @@
+use crate::error::Error;
 use crate::ClientTrait;
 use crate::DatabaseEntity;
 use crate::RawField;
@@ -31,14 +32,14 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(url: &str, pipe: Box<dyn Pipe>) -> Client {
-        Client::new(Client {
+    pub fn new(url: &str, pipe: Box<dyn Pipe>) -> Self {
+        Self {
             pipe,
             auth_failure: false,
             endpoint_reachable: false,
             url: url.to_string(),
             request_template: Map::new(),
-        })
+        }
     }
 
     fn authenticate(&mut self) -> Result<()> {
@@ -52,9 +53,9 @@ impl Client {
                 self.request_template = client_id;
                 Ok(())
             }
-            _ => Err(Box::new(Error::ClientError(
-                "Invalid response from server".to_string(),
-            ))),
+            _ => Err(Error::from_client(
+                "Invalid response from server",
+            )),
         }
     }
 
