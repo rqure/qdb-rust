@@ -1,15 +1,15 @@
-use crate::schema::field::{DatabaseField, RawField};
+use crate::schema::field::{Field, RawField};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct DatabaseEntity {
+pub struct Entity {
     pub id: String,
     pub type_name: String,
     pub name: String,
 }
 
-impl DatabaseEntity {
+impl Entity {
     pub fn new(id: &str, type_name: &str, name: &str) -> Self {
-        DatabaseEntity {
+        Entity {
             id: id.into(),
             type_name: type_name.into(),
             name: name.into(),
@@ -40,7 +40,7 @@ impl DatabaseEntity {
         self.name = name.into();
     }
 
-    pub fn field(&self, name: &str) -> DatabaseField {
-        DatabaseField::new(RawField::new(self.id(), name))
+    pub fn field(&self, name: &str) -> Field {
+        Field::new(RawField::new(self.id(), name))
     }
 }

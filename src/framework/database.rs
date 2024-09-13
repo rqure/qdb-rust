@@ -6,9 +6,9 @@ use std::sync::mpsc::Receiver;
 use crate::framework::client::Client;
 use crate::framework::notification::NotificationManager;
 use crate::Result;
-use crate::schema::field::{DatabaseField, RawField};
-use crate::schema::notification::{DatabaseNotification, NotificationConfig, NotificationToken};
-use crate::schema::entity::DatabaseEntity;
+use crate::schema::field::{Field, RawField};
+use crate::schema::notification::{Notification, Config, Token};
+use crate::schema::entity::Entity;
 
 pub struct _Database {
     client: Client,
@@ -43,24 +43,24 @@ impl Database {
         &self,
         entity_type: &str,
         field: &Vec<String>,
-        predicate: fn(&HashMap<String, DatabaseField>) -> bool,
-    ) -> Result<Vec<DatabaseEntity>> {
+        predicate: fn(&HashMap<String, Field>) -> bool,
+    ) -> Result<Vec<Entity>> {
         self.0.borrow().find(entity_type, field, predicate)
     }
 
-    pub fn get_entity(&self, entity_id: &str) -> Result<DatabaseEntity> {
+    pub fn get_entity(&self, entity_id: &str) -> Result<Entity> {
         self.0.borrow().get_entity(entity_id)
     }
 
-    pub fn get_entities(&self, entity_type: &str) -> Result<Vec<DatabaseEntity>> {
+    pub fn get_entities(&self, entity_type: &str) -> Result<Vec<Entity>> {
         self.0.borrow().get_entities(entity_type)
     }
 
-    pub fn read(&self, requests: &Vec<DatabaseField>) -> Result<()> {
+    pub fn read(&self, requests: &Vec<Field>) -> Result<()> {
         self.0.borrow().read(requests)
     }
 
-    pub fn write(&self, requests: &Vec<DatabaseField>) -> Result<()> {
+    pub fn write(&self, requests: &Vec<Field>) -> Result<()> {
         self.0.borrow().write(requests)
     }
 
@@ -70,12 +70,12 @@ impl Database {
 
     pub fn register_notification(
         &self,
-        config: &NotificationConfig,
-    ) -> Result<Receiver<DatabaseNotification>> {
+        config: &Config,
+    ) -> Result<Receiver<Notification>> {
         self.0.borrow().register_notification(config)
     }
 
-    pub fn unregister_notification(&self, token: &NotificationToken) -> Result<()> {
+    pub fn unregister_notification(&self, token: &Token) -> Result<()> {
         self.0.borrow().unregister_notification(token)
     }
 
@@ -110,11 +110,11 @@ impl _Database {
         self.client.disconnect()
     }
 
-    fn get_entity(&self, entity_id: &str) -> Result<DatabaseEntity> {
+    fn get_entity(&self, entity_id: &str) -> Result<Entity> {
         self.client.get_entity(entity_id)
     }
 
-    fn get_entities(&self, entity_type: &str) -> Result<Vec<DatabaseEntity>> {
+    fn get_entities(&self, entity_type: &str) -> Result<Vec<Entity>> {
         self.client.get_entities(entity_type)
     }
 
@@ -122,8 +122,8 @@ impl _Database {
         &self,
         entity_type: &str,
         fields: &Vec<String>,
-        predicate: fn(&HashMap<String, DatabaseField>) -> bool,
-    ) -> Result<Vec<DatabaseEntity>> {
+        predicate: fn(&HashMap<String, Field>) -> bool,
+    ) -> Result<Vec<Entity>> {
         let entities = self.get_entities(entity_type)?;
         let mut result = vec![];
 
@@ -132,7 +132,7 @@ impl _Database {
 
             for field in fields {
                 let field = RawField::new(entity.id.clone(), field.clone());
-                requests.push(DatabaseField::new(field));
+                requests.push(Field::new(field));
             }
 
             self.read(&mut requests)?;
@@ -150,23 +150,23 @@ impl _Database {
         Ok(result)
     }
 
-    fn read(&self, requests: &Vec<DatabaseField>) -> Result<()> {
+    fn read(&self, requests: &Vec<Field>) -> Result<()> {
         self.client.read(requests)
     }
 
-    fn write(&self, requests: &Vec<DatabaseField>) -> Result<()> {
+    fn write(&self, requests: &Vec<Field>) -> Result<()> {
         self.client.write(requests)
     }
 
     fn register_notification(
         &self,
-        config: &NotificationConfig,
-    ) -> Result<Receiver<DatabaseNotification>> {
+        config: &Config,
+    ) -> Result<Receiver<Notification>> {
         self.notification_manager
             .register(self.client.clone(), config)
     }
 
-    fn unregister_notification(&self, token: &NotificationToken) -> Result<()> {
+    fn unregister_notification(&self, token: &Token) -> Result<()> {
         self.notification_manager
             .unregister(self.client.clone(), token)
     }

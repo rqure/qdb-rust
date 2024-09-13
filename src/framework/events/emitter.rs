@@ -6,21 +6,21 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SlotToken(usize);
 
-pub struct EventEmitter<T> {
+pub struct Emitter<T> {
     senders: HashMap<SlotToken, Sender<T>>,
     args: std::marker::PhantomData<T>,
 }
 
-impl<T> EventEmitter<T> {
+impl<T> Emitter<T> {
     pub fn new() -> Self {
-        EventEmitter {
+        Emitter {
             senders: HashMap::new(),
             args: std::marker::PhantomData,
         }
     }
 }
 
-impl<T: Clone> EventEmitter<T> {
+impl<T: Clone> Emitter<T> {
     pub fn connect(&mut self, sender: Sender<T>) -> SlotToken {
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
         let id = SlotToken(COUNTER.fetch_add(1, Ordering::Relaxed));

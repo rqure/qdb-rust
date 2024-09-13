@@ -1,8 +1,8 @@
 use crate::error::Error;
 use crate::framework::client::Client;
-use crate::framework::events::emitter::EventEmitter;
+use crate::framework::events::emitter::Emitter;
 use crate::Result;
-use crate::schema::notification::{DatabaseNotification, NotificationConfig, NotificationToken};
+use crate::schema::notification::{Notification, Config, Token};
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -10,9 +10,9 @@ use std::rc::Rc;
 use std::sync::mpsc::Receiver;
 
 pub struct _NotificationManager {
-    registered_config: HashSet<NotificationConfig>,
-    config_to_token: HashMap<NotificationConfig, NotificationToken>,
-    token_to_callback_list: HashMap<NotificationToken, EventEmitter<DatabaseNotification>>,
+    registered_config: HashSet<Config>,
+    config_to_token: HashMap<Config, Token>,
+    token_to_callback_list: HashMap<Token, Emitter<Notification>>,
 }
 
 type NotificationManagerRef = Rc<RefCell<_NotificationManager>>;
@@ -34,12 +34,12 @@ impl NotificationManager {
     pub fn register(
         &self,
         client: Client,
-        config: &NotificationConfig,
-    ) -> Result<Receiver<DatabaseNotification>> {
+        config: &Config,
+    ) -> Result<Receiver<Notification>> {
         self.0.borrow_mut().register(client, config)
     }
 
-    pub fn unregister(&self, client: Client, token: &NotificationToken) -> Result<()> {
+    pub fn unregister(&self, client: Client, token: &Token) -> Result<()> {
         self.0.borrow_mut().unregister(client, token)
     }
 
@@ -68,8 +68,8 @@ impl _NotificationManager {
     fn register(
         &mut self,
         client: Client,
-        config: &NotificationConfig,
-    ) -> Result<Receiver<DatabaseNotification>> {
+        config: &Config,
+    ) -> Result<Receiver<Notification>> {
         if self.registered_config.contains(&config) {
             let token = self
                 .config_to_token
@@ -94,7 +94,7 @@ impl _NotificationManager {
         self.registered_config.insert(config.clone());
         self.config_to_token.insert(config.clone(), token.clone());
         self.token_to_callback_list
-            .insert(token.clone(), EventEmitter::new());
+            .insert(token.clone(), Emitter::new());
 
         let receiver = self
             .token_to_callback_list
@@ -107,7 +107,7 @@ impl _NotificationManager {
         Ok(receiver)
     }
 
-    fn unregister(&mut self, client: Client, token: &NotificationToken) -> Result<()> {
+    fn unregister(&mut self, client: Client, token: &Token) -> Result<()> {
         if !self.token_to_callback_list.contains_key(token) {
             return Err(Error::from_notification(
                 "Token not found during unregistration",
@@ -128,7 +128,7 @@ impl _NotificationManager {
         let notifications = client.get_notifications()?;
 
         for notification in &notifications {
-            let token = NotificationToken::from(notification.token.clone());
+            let token = Token::from(notification.token.clone());
             let emitter =
                 self.token_to_callback_list
                     .get_mut(&token)

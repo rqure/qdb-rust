@@ -1,15 +1,15 @@
-use crate::schema::field::DatabaseField;
+use crate::schema::field::Field;
 
 #[derive(Clone)]
-pub struct DatabaseNotification {
+pub struct Notification {
     pub token: String,
-    pub current: DatabaseField,
-    pub previous: DatabaseField,
-    pub context: Vec<DatabaseField>,
+    pub current: Field,
+    pub previous: Field,
+    pub context: Vec<Field>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct NotificationConfig {
+pub struct Config {
     pub entity_id: String,
     pub entity_type: String,
     pub field: String,
@@ -18,22 +18,22 @@ pub struct NotificationConfig {
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
-pub struct NotificationToken(String);
+pub struct Token(String);
 
-impl Into<String> for &NotificationToken {
+impl Into<String> for &Token {
     fn into(self) -> String {
         self.0.clone()
     }
 }
 
-impl From<String> for NotificationToken {
+impl From<String> for Token {
     fn from(s: String) -> Self {
-        NotificationToken(s)
+        Token(s)
     }
 }
 
-impl From<&str> for NotificationToken {
+impl From<&str> for Token {
     fn from(s: &str) -> Self {
-        NotificationToken(s.to_string())
+        Token(s.to_string())
     }
 }

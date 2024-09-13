@@ -1,11 +1,11 @@
 use crate::error::Error;
 use crate::Result;
-use crate::schema::field::DatabaseField;
+use crate::schema::field::Field;
 use crate::schema::field::RawField;
-use crate::schema::notification::DatabaseNotification;
-use crate::schema::notification::NotificationConfig;
-use crate::schema::notification::NotificationToken;
-use crate::schema::entity::DatabaseEntity;
+use crate::schema::notification::Notification;
+use crate::schema::notification::Config;
+use crate::schema::notification::Token;
+use crate::schema::entity::Entity;
 use crate::schema::value::DatabaseValue;
 use crate::schema::value::RawValue;
 use crate::clients::common::ClientTrait;
@@ -68,7 +68,7 @@ impl Client {
             .unwrap_or(false)
     }
 
-    fn parse_database_field(&self, notification: &Value, prefix: &str) -> Result<DatabaseField> {
+    fn parse_database_field(&self, notification: &Value, prefix: &str) -> Result<Field> {
         let entity_id = notification
             .pointer(&format!("{}/id", prefix))
             .and_then(|v| v.as_str())
@@ -265,7 +265,7 @@ impl ClientTrait for Client {
         true
     }
 
-    fn get_entity(&mut self, entity_id: &str) -> Result<DatabaseEntity> {
+    fn get_entity(&mut self, entity_id: &str) -> Result<Entity> {
         let mut request = Map::new();
         request.insert(
             "@type".to_string(),
@@ -282,7 +282,7 @@ impl ClientTrait for Client {
                 "Invalid response from server: Failed to extract entity",
             ))?;
 
-        Ok(DatabaseEntity {
+        Ok(Entity {
             id: entity
                 .get("id")
                 .and_then(|v| v.as_str())
@@ -307,7 +307,7 @@ impl ClientTrait for Client {
         })
     }
 
-    fn get_entities(&mut self, entity_type: &str) -> Result<Vec<DatabaseEntity>> {
+    fn get_entities(&mut self, entity_type: &str) -> Result<Vec<Entity>> {
         let mut request = Map::new();
         request.insert(
             "@type".to_string(),
@@ -330,7 +330,7 @@ impl ClientTrait for Client {
         let mut result = vec![];
         for entity in entities {
             match entity {
-                Value::Object(entity) => result.push(DatabaseEntity {
+                Value::Object(entity) => result.push(Entity {
                     id: entity
                         .get("id")
                         .and_then(|v| v.as_str())
@@ -364,7 +364,7 @@ impl ClientTrait for Client {
         Ok(result)
     }
 
-    fn read(&mut self, requests: &Vec<DatabaseField>) -> Result<()> {
+    fn read(&mut self, requests: &Vec<Field>) -> Result<()> {
         let mut request = Map::new();
         request.insert(
             "@type".to_string(),
@@ -417,7 +417,7 @@ impl ClientTrait for Client {
 
                     let field = requests
                         .iter()
-                        .find(|r: &&DatabaseField| {
+                        .find(|r: &&Field| {
                             r.entity_id() == entity_id && r.name() == field_name
                         })
                         .ok_or(Error::from_client(
@@ -477,7 +477,7 @@ impl ClientTrait for Client {
         Ok(())
     }
 
-    fn write(&mut self, requests: &Vec<DatabaseField>) -> Result<()> {
+    fn write(&mut self, requests: &Vec<Field>) -> Result<()> {
         let mut request = Map::new();
         request.insert(
             "@type".to_string(),
@@ -603,7 +603,7 @@ impl ClientTrait for Client {
         Ok(())
     }
 
-    fn register_notification(&mut self, config: &NotificationConfig) -> Result<NotificationToken> {
+    fn register_notification(&mut self, config: &Config) -> Result<Token> {
         let context = config
             .context
             .iter()
@@ -649,10 +649,10 @@ impl ClientTrait for Client {
                 "Invalid response from server: token is not valid",
             ))?;
 
-        Ok(NotificationToken::from(token))
+        Ok(Token::from(token))
     }
 
-    fn unregister_notification(&mut self, token: &NotificationToken) -> Result<()> {
+    fn unregister_notification(&mut self, token: &Token) -> Result<()> {
         let mut request = Map::new();
         request.insert(
             "@type".to_string(),
@@ -670,7 +670,7 @@ impl ClientTrait for Client {
         Ok(())
     }
 
-    fn get_notifications(&mut self) -> Result<Vec<DatabaseNotification>> {
+    fn get_notifications(&mut self) -> Result<Vec<Notification>> {
         let mut request = Map::new();
         request.insert(
             "@type".to_string(),
@@ -707,9 +707,9 @@ impl ClientTrait for Client {
                 })?
                 .iter()
                 .map(|v| self.parse_database_field(v, ""))
-                .collect::<Result<Vec<DatabaseField>>>()?;
+                .collect::<Result<Vec<Field>>>()?;
 
-            result.push(DatabaseNotification {
+            result.push(Notification {
                 token,
                 current,
                 previous,

@@ -1,17 +1,17 @@
 use crate::loggers::common::{LogLevel, LoggerTrait};
 use chrono::Utc;
 
-pub struct ConsoleLogger {
+pub struct Console {
     level: LogLevel,
 }
 
-impl ConsoleLogger {
+impl Console {
     pub fn new(level: LogLevel) -> Self {
-        ConsoleLogger { level: level }
+        Console { level: level }
     }
 }
 
-impl LoggerTrait for ConsoleLogger {
+impl LoggerTrait for Console {
     fn log(&self, level: &LogLevel, message: &str) {
         if *level >= self.level {
             println!(

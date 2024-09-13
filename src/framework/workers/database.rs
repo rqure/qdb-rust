@@ -1,6 +1,6 @@
-use crate::framework::application::ApplicationContext;
+use crate::framework::application::Context;
 use crate::framework::workers::common::WorkerTrait;
-use crate::framework::events::emitter::EventEmitter;
+use crate::framework::events::emitter::Emitter;
 
 use crate::loggers::common::LogLevel;
 
@@ -8,32 +8,38 @@ use crate::Result;
 
 use std::sync::mpsc::Receiver;
 
-pub struct DatabaseWorkerEventEmitters {
-    pub connection_status: EventEmitter<bool>,
+pub struct Emitters {
+    pub connection_status: Emitter<bool>,
 }
 
-pub struct DatabaseWorker {
-    is_db_connected: bool,
-    is_nw_connected: bool,
-    pub emitters: DatabaseWorkerEventEmitters,
+pub struct Receivers {
     pub network_connection_events: Option<Receiver<bool>>,
 }
 
-impl DatabaseWorker {
+pub struct Worker {
+    is_db_connected: bool,
+    is_nw_connected: bool,
+    pub emitters: Emitters,
+    pub receivers: Receivers,
+}
+
+impl Worker {
     pub fn new() -> Self {
         Self {
             is_db_connected: false,
             is_nw_connected: false,
-            emitters: DatabaseWorkerEventEmitters {
-                connection_status: EventEmitter::new(),
+            emitters: Emitters {
+                connection_status: Emitter::new(),
             },
-            network_connection_events: None,
+            receivers: Receivers {
+                network_connection_events: None,
+            },
         }
     }
 }
 
-impl WorkerTrait for DatabaseWorker {
-    fn intialize(&mut self, ctx: ApplicationContext) -> Result<()> {
+impl WorkerTrait for Worker {
+    fn intialize(&mut self, ctx: Context) -> Result<()> {
         ctx.logger().log(
             &LogLevel::Info,
             "[qdb::DatabaseWorker::initialize] Initializing database worker",
@@ -41,7 +47,7 @@ impl WorkerTrait for DatabaseWorker {
         Ok(())
     }
 
-    fn do_work(&mut self, ctx: ApplicationContext) -> Result<()> {
+    fn do_work(&mut self, ctx: Context) -> Result<()> {
         if !self.is_nw_connected {
             if self.is_db_connected {
                 ctx.logger().log(&LogLevel::Warning, "[qdb::DatabaseWorker::do_work] Network connection loss has disrupted database connection");
@@ -88,7 +94,7 @@ impl WorkerTrait for DatabaseWorker {
         Ok(())
     }
 
-    fn deinitialize(&mut self, ctx: ApplicationContext) -> Result<()> {
+    fn deinitialize(&mut self, ctx: Context) -> Result<()> {
         ctx.logger().log(
             &LogLevel::Info,
             "[qdb::DatabaseWorker::deinitialize] Deinitializing database worker",
@@ -97,7 +103,7 @@ impl WorkerTrait for DatabaseWorker {
     }
 
     fn process_events(&mut self) -> Result<()> {
-        if let Some(receiver) = &self.network_connection_events {
+        if let Some(receiver) = &self.receivers.network_connection_events {
             while let Ok(connected) = receiver.try_recv() {
                 self.is_nw_connected = connected;
             }

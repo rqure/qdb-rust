@@ -78,20 +78,20 @@ impl RawField {
         }
     }
 
-    pub fn into_field(self) -> DatabaseField {
-        DatabaseField::new(self)
+    pub fn into_field(self) -> Field {
+        Field::new(self)
     }
 }
 
-pub struct DatabaseField(FieldRef);
+pub struct Field(FieldRef);
 
-impl Clone for DatabaseField {
+impl Clone for Field {
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl DatabaseField {
+impl Field {
     pub fn new(field: RawField) -> Self {
         Self(Rc::new(RefCell::new(field)))
     }

@@ -36,18 +36,18 @@ impl Clone for BoolFlag {
     }
 }
 
-struct _ApplicationContext {
+struct _Context {
     pub database: Database,
     pub logger: Logger,
     pub quit: BoolFlag,
 }
 
-type ApplicationContextRef = Rc<RefCell<_ApplicationContext>>;
-pub struct ApplicationContext(ApplicationContextRef);
+type ContextRef = Rc<RefCell<_Context>>;
+pub struct Context(ContextRef);
 
-impl ApplicationContext {
+impl Context {
     pub fn new(database: Database, logger: Logger) -> Self {
-        ApplicationContext(Rc::new(RefCell::new(_ApplicationContext {
+        Context(Rc::new(RefCell::new(_Context {
             database,
             logger,
             quit: BoolFlag::new(),
@@ -67,20 +67,20 @@ impl ApplicationContext {
     }
 }
 
-impl Clone for ApplicationContext {
+impl Clone for Context {
     fn clone(&self) -> Self {
-        ApplicationContext(self.0.clone())
+        Context(self.0.clone())
     }
 }
 
 pub struct Application {
-    ctx: ApplicationContext,
+    ctx: Context,
     workers: Vec<Box<dyn WorkerTrait>>,
     loop_interval_ms: u64,
 }
 
 impl Application {
-    pub fn new(ctx: ApplicationContext, loop_interval_ms: u64) -> Self {
+    pub fn new(ctx: Context, loop_interval_ms: u64) -> Self {
         Self {
             ctx,
             workers: vec![],
@@ -90,7 +90,7 @@ impl Application {
 }
 
 impl WorkerTrait for Application {
-    fn intialize(&mut self, ctx: ApplicationContext) -> Result<()> {
+    fn intialize(&mut self, ctx: Context) -> Result<()> {
         ctx.logger().log(
             &LogLevel::Info,
             "[qdb::Application::initialize] Initializing application",
@@ -110,7 +110,7 @@ impl WorkerTrait for Application {
         Ok(())
     }
 
-    fn do_work(&mut self, ctx: ApplicationContext) -> Result<()> {
+    fn do_work(&mut self, ctx: Context) -> Result<()> {
         ctx.logger().log(
             &LogLevel::Info,
             "[qdb::Application::do_work] Application has started",
@@ -158,7 +158,7 @@ impl WorkerTrait for Application {
         Ok(())
     }
 
-    fn deinitialize(&mut self, ctx: ApplicationContext) -> Result<()> {
+    fn deinitialize(&mut self, ctx: Context) -> Result<()> {
         ctx.logger().log(
             &LogLevel::Info,
             "[qdb::Application::deinitialize] Deinitializing application",
