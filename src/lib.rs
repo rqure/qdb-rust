@@ -10,4 +10,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Instant;
 
-mod error;
+pub mod clients;
+pub mod error;
+pub mod framework;
+pub mod loggers;
+pub mod schema;
