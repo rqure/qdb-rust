@@ -13,7 +13,7 @@ pub struct Emitters {
 }
 
 pub struct Receivers {
-    pub network_connection_events: Option<Receiver<bool>>,
+    pub network_connection_status: Option<Receiver<bool>>,
 }
 
 pub struct Worker {
@@ -32,7 +32,7 @@ impl Worker {
                 connection_status: Emitter::new(),
             },
             receivers: Receivers {
-                network_connection_events: None,
+                network_connection_status: None,
             },
         }
     }
@@ -40,17 +40,22 @@ impl Worker {
 
 impl WorkerTrait for Worker {
     fn intialize(&mut self, ctx: Context) -> Result<()> {
-        ctx.logger().log(
-            &LogLevel::Info,
-            "[qdb::DatabaseWorker::initialize] Initializing database worker",
+        let c = format!("{}::{}", std::any::type_name::<Self>(), "initialize");
+
+        ctx.logger().info(
+            format!("[{}] Initializing database worker", c).as_str(),
         );
         Ok(())
     }
 
     fn do_work(&mut self, ctx: Context) -> Result<()> {
+        let c = format!("{}::{}", std::any::type_name::<Self>(), "do_work");
+
         if !self.is_nw_connected {
             if self.is_db_connected {
-                ctx.logger().log(&LogLevel::Warning, "[qdb::DatabaseWorker::do_work] Network connection loss has disrupted database connection");
+                ctx.logger().warning(
+                    format!("[{}] Network connection loss has disrupted database connection", c).as_str()
+                );
                 self.is_db_connected = false;
                 self.emitters.connection_status.emit(self.is_db_connected);
             }
@@ -60,27 +65,24 @@ impl WorkerTrait for Worker {
 
         if !ctx.database().connected() {
             if self.is_db_connected {
-                ctx.logger().log(
-                    &LogLevel::Warning,
-                    "[qdb::DatabaseWorker::do_work] Disconnected from database",
+                ctx.logger().warning(
+                    format!("[{}] Disconnected from database", c).as_str(),
                 );
                 ctx.database().clear_notifications();
                 self.is_db_connected = false;
                 self.emitters.connection_status.emit(self.is_db_connected);
             }
 
-            ctx.logger().log(
-                &LogLevel::Debug,
-                "[qdb::DatabaseWorker::do_work] Attempting to connect to the database...",
+            ctx.logger().debug(
+                format!("[{}] Attempting to connect to the database...", c).as_str(),
             );
 
             ctx.database().disconnect();
             ctx.database().connect()?;
 
             if ctx.database().connected() {
-                ctx.logger().log(
-                    &LogLevel::Info,
-                    "[qdb::DatabaseWorker::do_work] Connected to the database",
+                ctx.logger().info(
+                    format!("[{}] Connected to the database", c).as_str(),
                 );
                 self.is_db_connected = true;
                 self.emitters.connection_status.emit(self.is_db_connected);
@@ -95,15 +97,16 @@ impl WorkerTrait for Worker {
     }
 
     fn deinitialize(&mut self, ctx: Context) -> Result<()> {
-        ctx.logger().log(
-            &LogLevel::Info,
-            "[qdb::DatabaseWorker::deinitialize] Deinitializing database worker",
+        let c = format!("{}::{}", std::any::type_name::<Self>(), "deinitialize");
+
+        ctx.logger().info(
+            format!("[{}] Deinitializing database worker", c).as_str(),
         );
         Ok(())
     }
 
     fn process_events(&mut self) -> Result<()> {
-        if let Some(receiver) = &self.receivers.network_connection_events {
+        if let Some(receiver) = &self.receivers.network_connection_status {
             while let Ok(connected) = receiver.try_recv() {
                 self.is_nw_connected = connected;
             }

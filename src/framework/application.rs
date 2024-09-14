@@ -1,7 +1,6 @@
 use crate::framework::database::Database;
 use crate::framework::logger::Logger;
 use crate::framework::workers::common::WorkerTrait;
-use crate::loggers::common::LogLevel;
 use crate::Result;
 
 use std::cell::RefCell;
@@ -91,17 +90,18 @@ impl Application {
 
 impl WorkerTrait for Application {
     fn intialize(&mut self, ctx: Context) -> Result<()> {
-        ctx.logger().log(
-            &LogLevel::Info,
-            "[qdb::Application::initialize] Initializing application",
+        let c = format!("{}::{}", std::any::type_name::<Self>(), "initialize");
+
+        ctx.logger().info(
+            format!("[{}] Initializing application", c).as_str(),
         );
         for worker in &mut self.workers {
             match worker.intialize(ctx.clone()) {
                 Ok(_) => {}
                 Err(e) => {
                     ctx.logger().error(&format!(
-                        "[qdb::Application::initialize] Error while initializing worker: {}",
-                        e
+                        "[{}] Error while initializing worker: {}",
+                        c, e
                     ));
                 }
             }
@@ -111,32 +111,40 @@ impl WorkerTrait for Application {
     }
 
     fn do_work(&mut self, ctx: Context) -> Result<()> {
-        ctx.logger().log(
-            &LogLevel::Info,
-            "[qdb::Application::do_work] Application has started",
+        let c = format!("{}::{}", std::any::type_name::<Self>(), "do_work");
+
+        ctx.logger().info(
+            format!("[{}] Application has started", c).as_str(),
         );
 
         while {
             let start = Instant::now();
 
             for i in 0..self.workers.len() {
+                let iter_start = Instant::now();
+
                 let worker = &mut self.workers[i];
                 match worker.do_work(ctx.clone()) {
                     Ok(_) => {}
                     Err(e) => {
                         ctx.logger().error(&format!(
-                            "[qdb::Application::do_work] Error while executing worker: {}",
-                            e
+                            "[{}] Error while executing worker: {}",
+                            c, e
                         ));
                     }
                 }
+
+                let elapsed_ms = iter_start.elapsed().as_millis();
+                ctx.logger().trace(
+                    format!("[{}] Worker '{}' took {} ms to complete tick",
+                        c, worker.name(), elapsed_ms).as_str());
 
                 match self.process_events() {
                     Ok(_) => {}
                     Err(e) => {
                         ctx.logger().error(&format!(
-                            "[qdb::Application::do_work] Error while processing events: {}",
-                            e
+                            "[{}] Error while processing events: {}",
+                            c, e
                         ));
                     }
                 }
@@ -148,6 +156,10 @@ impl WorkerTrait for Application {
 
                 if loop_time > elapsed_time {
                     let sleep_time = loop_time - elapsed_time;
+                    ctx.logger().trace(&format!(
+                        "[{}] Idle for {:?} ms",
+                        c, sleep_time.as_millis()
+                    ));
                     std::thread::sleep(sleep_time);
                 }
             }
@@ -159,9 +171,10 @@ impl WorkerTrait for Application {
     }
 
     fn deinitialize(&mut self, ctx: Context) -> Result<()> {
-        ctx.logger().log(
-            &LogLevel::Info,
-            "[qdb::Application::deinitialize] Deinitializing application",
+        let c = format!("{}::{}", std::any::type_name::<Self>(), "deinitialize");
+
+        ctx.logger().info(
+            format!("[{}] Deinitializing application", c).as_str(),
         );
 
         for worker in &mut self.workers {
@@ -169,28 +182,29 @@ impl WorkerTrait for Application {
                 Ok(_) => {}
                 Err(e) => {
                     ctx.logger().error(&format!(
-                        "[qdb::Application::deinitialize] Error while deinitializing worker: {}",
-                        e
+                        "[{}] Error while deinitializing worker: {}",
+                        c, e
                     ));
                 }
             }
         }
 
-        ctx.logger().log(
-            &LogLevel::Info,
-            "[qdb::Application::deinitialize] Shutting down now",
+        ctx.logger().info(
+            format!("[{}] Shutting down now", c).as_str(),
         );
         Ok(())
     }
 
     fn process_events(&mut self) -> Result<()> {
+        let c = format!("{}::{}", std::any::type_name::<Self>(), "process_events");
+
         for worker in &mut self.workers {
             match worker.process_events() {
                 Ok(_) => {}
                 Err(e) => {
                     self.ctx.logger().error(&format!(
-                        "[qdb::Application::process_events] Error while processing events: {}",
-                        e
+                        "[{}] Error while processing events: {}",
+                        c, e
                     ));
                 }
             }

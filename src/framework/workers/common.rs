@@ -6,4 +6,8 @@ pub trait WorkerTrait {
     fn do_work(&mut self, ctx: Context) -> Result<()>;
     fn deinitialize(&mut self, ctx: Context) -> Result<()>;
     fn process_events(&mut self) -> Result<()>;
+
+    fn name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
 }
