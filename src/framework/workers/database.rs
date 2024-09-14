@@ -2,8 +2,6 @@ use crate::framework::application::Context;
 use crate::framework::workers::common::WorkerTrait;
 use crate::framework::events::emitter::Emitter;
 
-use crate::loggers::common::LogLevel;
-
 use crate::Result;
 
 use std::sync::mpsc::Receiver;
